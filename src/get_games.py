@@ -1,4 +1,4 @@
-import psycopg2
+from psycopg2 import pool
 import time
 import requests
 import json
@@ -6,112 +6,181 @@ from datetime import datetime, timedelta
 import concurrent.futures
 import passwords
 import threading
+import queue
+
+
+conn_pool = pool.SimpleConnectionPool(5, 95, dbname="mlb_data", user="postgres", password=f"{passwords.password}", host="127.0.0.1", port="5432")
 
 failed_game_ids = set()
 failed_game_ids_lock = threading.Lock()
+league_ids = {'MLB': 1, 'AAA': 11, 'AA': 12, 'A+': 13, 'A': 14}
+game_queue = queue.Queue()
 
 def try_failed_game_ids():
-    conn = psycopg2.connect(
-        dbname="mlb_data", user="postgres", password=f"{passwords.password}", host="127.0.0.1", port="5432"
-    )
+    # conn = psycopg2.connect(
+    #     dbname="mlb_data", user="postgres", password=f"{passwords.password}", host="127.0.0.1", port="5432"
+    # )
+    # cursor = conn.cursor()
+    conn = conn_pool.getconn()  # Get a connection from the pool
     cursor = conn.cursor()
-    while failed_game_ids:
-        with failed_game_ids_lock:
-            for game_id in list(failed_game_ids):  # Use list to allow removal while iterating
-                game_url = f"https://baseballsavant.mlb.com/gf?game_pk={game_id}"
-                game_response = requests.get(game_url)
-                if game_response.status_code == 200:
-                    game_data = game_response.json()
-                    game_json = json.dumps(game_data)
-                    print(date)
-                    cursor.execute("""
-                        INSERT INTO game_info (game_id, game_date, game_data)
-                        VALUES (%s, %s, %s::jsonb)
-                    """, (game_id, date, game_json))
-                    conn.commit()
-                    failed_game_ids.remove(game_id)
+    try:
+        while not game_queue.empty():
+            try:
+                game_id, date, league, game_type = game_queue.get_nowait()
+                cursor.execute("SELECT COUNT(*) FROM game_info WHERE game_id = %s", (game_id,))
+                result = cursor.fetchone()
+                if result[0] == 0:
+                    game_url = f"https://baseballsavant.mlb.com/gf?game_pk={game_id}"
+                    game_response = requests.get(game_url)
+                    if game_response.status_code == 200:
+                        game_data = game_response.json()
+                        game_json = json.dumps(game_data)
+                        print(date)
+                        cursor.execute("""
+                            INSERT INTO game_info (game_id, game_date, league, game_type, game_data)
+                            VALUES (%s, %s, %s, %s, %s::jsonb)
+                        """, (game_id, date, league, game_type, game_json))
+                        conn.commit()
+                        game_queue.task_done()
+                    else:
+                        print(f"Failed retry for id {game_id}, code: {game_response.status_code}")
                 else:
-                    print(f"Failed retry for id {game_id}, code: {game_response.status_code}")
+                    game_queue.task_done()
+            except queue.Empty:
+                pass
+    finally:
+        cursor.close()
+        conn_pool.putconn(conn)
+    # cursor.close()
+    # conn.close()
 
-    cursor.close()
-    conn.close()
-
-def get_game_ids(start_date, end_date):
-    url = f"https://statsapi.mlb.com/api/v1/schedule?sportId=1&startDate={start_date}&endDate={end_date}"
-    response = requests.get(url)
-    conn = psycopg2.connect(
-        dbname="mlb_data", user="postgres", password=f"{passwords.password}", host="127.0.0.1", port="5432"
-    )
-    cursor = conn.cursor()
+def do_failed():
+    for game in failed_game_ids:
+        game_queue.put(game)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=95) as executor:
+        executor.map(lambda _: try_failed_game_ids(), range(95))
     
+
+
+def get_game_jsons(league, dates):
+    # conn = psycopg2.connect(
+    # dbname="mlb_data", user="postgres", password=f"{passwords.password}", host="127.0.0.1", port="5432")
+    # cursor = conn.cursor()
+    # for game in dates['games']:
+    #     game_type = game.get('seriesDescription')
+    #     game_id = str(game.get('gamePk')).zfill(6)
+    #     date = dates.get('date')
+    #     if game_type in ["Regular Season", "Spring Training", "Wild Card Game", "Division Series", "League Championship Series", "World Series", "Championship"]:
+    #         cursor.execute("SELECT COUNT(*) FROM game_info WHERE game_id = %s", (game_id,))
+    #         result = cursor.fetchone()
+    #         if result[0] == 0:
+    #             game_url = f"https://baseballsavant.mlb.com/gf?game_pk={game_id}"
+    #             game_response = requests.get(game_url)
+    #             if game_response.status_code == 200:
+    #                 game_data = game_response.json()
+    #                 game_json = json.dumps(game_data)
+    #                 print(game_id)
+    #                 #if data.get("scoreboard", {}).get("linescore", {}).get("innings") != [] and data.get("game_status") == "F":
+    #                 print(date)
+    #                 cursor.execute("""
+    #                     INSERT INTO game_info (game_id, game_date, league, game_type, game_data)
+    #                     VALUES (%s, %s, %s, %s, %s::jsonb)
+    #                 """, (game_id, date, league, game_type, game_json))
+    #                 conn.commit()
+    #             else:
+    #                 with failed_game_ids_lock:
+    #                     failed_game_ids.add((game_id, date, league, game_type)) 
+    #                 print(f"Failed to fetch game data for game ID {game_id}, code: {game_response.status_code}")
+    # # Close DB connection
+    # cursor.close()
+    # conn.close()
+    conn = conn_pool.getconn()  # Get a connection from the pool
+    cursor = conn.cursor()
+    try:
+        for game in dates['games']:
+            game_type = game.get('seriesDescription')
+            game_id = str(game.get('gamePk')).zfill(6)
+            date = dates.get('date')
+
+            if game_type in ["Regular Season", "Spring Training", "Wild Card Game", 
+                             "Division Series", "League Championship Series", "World Series", "Championship"]:
+                cursor.execute("SELECT COUNT(*) FROM game_info WHERE game_id = %s", (game_id,))
+                result = cursor.fetchone()
+
+                if result[0] == 0:
+                    game_url = f"https://baseballsavant.mlb.com/gf?game_pk={game_id}"
+                    game_response = requests.get(game_url)
+
+                    if game_response.status_code == 200:
+                        game_data = game_response.json()
+                        game_json = json.dumps(game_data)
+
+                        cursor.execute("""
+                            INSERT INTO game_info (game_id, game_date, league, game_type, game_data)
+                            VALUES (%s, %s, %s, %s, %s::jsonb)
+                        """, (game_id, date, league, game_type, game_json))
+                        conn.commit()
+                    else:
+                        with failed_game_ids_lock:
+                            failed_game_ids.add((game_id, date, league, game_type)) 
+                        print(f"Failed to fetch game data for game ID {game_id}, code: {game_response.status_code}")
+    
+    finally:
+        cursor.close()
+        conn_pool.putconn(conn)
+
+
+def get_game_ids(start_date, end_date, league, sport_id):
+    url = f"https://statsapi.mlb.com/api/v1/schedule?sportId={sport_id}&startDate={start_date}&endDate={end_date}"
+    response = requests.get(url)
+    
+
     if response.status_code == 200:
         data = response.json()
-        for dates in data['dates']:
-            for game in dates['games']:
-                if game.get('seriesDescription') == "Regular Season":
-                    game_id = str(game['gamePk']).zfill(6)
-                    print(game_id)
-                    date = dates['date']
-                    cursor.execute("SELECT COUNT(*) FROM game_info WHERE game_id = %s", (game_id,))
-
-                    result = cursor.fetchone()
-                    if result[0] == 0:
-                        game_url = f"https://baseballsavant.mlb.com/gf?game_pk={game_id}"
-                        game_response = requests.get(game_url)
-                        if game_response.status_code == 200:
-                            game_data = game_response.json()
-                            game_json = json.dumps(game_data)
-                            print(date)
-                            cursor.execute("""
-                                INSERT INTO game_info (game_id, game_date, game_data)
-                                VALUES (%s, %s, %s::jsonb)
-                            """, (game_id, date, game_json))
-                            conn.commit()
-                        else:
-                            with failed_game_ids_lock:
-                                failed_game_ids.add(game_id) 
-                            print(f"Failed to fetch game data for game ID {game_id}, code: {game_response.status_code}")
+        with concurrent.futures.ThreadPoolExecutor(max_workers=19) as executor:
+            results = executor.map(lambda date: get_game_jsons(league, date), data['dates'])
     else:
         print(f"Failed to fetch game IDs for {start_date} to {end_date}")
-    # Close DB connection
-    cursor.close()
-    conn.close()
-
-
-def get_all_game_ids(start_year, end_year, start_month=3, end_month=10):
-    current_year = start_year
-    current_month = start_month
-    
-    while current_year <= end_year:
-        start_date = datetime(current_year, current_month, 1)
-        
-        while start_date.month <= end_month:
-            # Calculate the end of the current week (7 days from start_date)
-            end_date = start_date + timedelta(days=6)
+                
             
-            # Get game IDs for this week
-            get_game_ids(start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d'))
-            time.sleep(1/20)
-            # Move to the next week
-            start_date += timedelta(weeks=1)
+
+
+def get_all_game_ids(start_year = 1903, end_year = 2024, start_month=1, end_month=12):
+    
+    leagues = {
+        'MLB': range(start_year, end_year + 1),
+        'AAA': range(2005, end_year + 1),
+        'AA': range(2005, end_year + 1),
+        'A+': range(2005, end_year + 1),
+        'A': range(2005, end_year + 1),
+    }
+
+    # 10 Threads for different years
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as year_executor:
+        futures = []
+        for league, years in leagues.items():
+            for y in years:
+                futures.append(year_executor.submit(get_game_ids, f'{y}-01-01', f'{y}-12-31', league, league_ids[league]))
+
+        concurrent.futures.wait(futures)  # Ensures all tasks complete before exiting
+
+
+
+
+# def split_work(start_year=1995, end_year=2024, num_threads=30):
+#     year_ranges = [(start_year + i, start_year + i) for i in range(num_threads)]
+
+#     with concurrent.futures.ThreadPoolExecutor(max_workers=num_threads) as executor:
+#         futures = [executor.submit(get_all_game_ids, start, end) for start, end in year_ranges]
         
-        # After finishing the current year, move to the next year and reset month to March
-        current_year += 1
-        current_month = start_month
+#         # Wait for all threads to finish
+#         for future in concurrent.futures.as_completed(futures):
+#             future.result()  # This raises exceptions if any thread fails
 
 
+get_all_game_ids()
 
-def split_work(start_year=1995, end_year=2024, num_threads=30):
-    year_ranges = [(start_year + i, start_year + i) for i in range(num_threads)]
+do_failed()
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=num_threads) as executor:
-        futures = [executor.submit(get_all_game_ids, start, end) for start, end in year_ranges]
-        
-        # Wait for all threads to finish
-        for future in concurrent.futures.as_completed(futures):
-            future.result()  # This raises exceptions if any thread fails
-
-
-split_work()
-try_failed_game_ids()
+conn_pool.closeall()
 
