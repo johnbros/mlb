@@ -17,7 +17,8 @@
 - **Keys and Indexes**:
   - **Primary Key**
     - ***game_id***: Identifier of each individual game, reused mlbs gamePK
-  - **Foreign Keys**: h_team_id references teams(team_id)
+  - **Foreign Keys**
+    -***h_team_id***: references teams(team_id)
 
 ### Table: Teams
 
@@ -41,12 +42,12 @@
 
 ### Table: Venues
 
-- **Description**: Information about baseball stadiums and venues
+- **Description**: Basic name and identifier for each venue
 - **Columns**:
-  - **venue_id**: Integer, NOT NULL - Unique identifier for each venue
   - **venue_name**: Text - Name of the venue
 - **Keys and Indexes**:
-  - **Primary Key**: venue_id
+  - **Primary Key**
+    - ***venue_id***: Integer - Unique identifier for the Venue
 
 ### Table: Innings
 
@@ -109,21 +110,21 @@
 
 ### Table: Divisions
 
-- **Description**: MLB divisions
+- **Description**: MLB divisions (American League East, etc.)
 - **Columns**:
-  - **division_id**: Integer, NOT NULL - Unique identifier
-  - **division_name**: Text, NOT NULL - Name of the division
+  - **division_name**: Text, Not null - Name of the division
 - **Keys and Indexes**:
-  - **Primary Key**: division_id
+  - **Primary Key**
+    - ***division_id***: Integer, Not null - Unique identifier for the division
 
 ### Table: Leagues
 
-- **Description**: MLB leagues (AL, NL)
+- **Description**: MLB leagues (American League, National League)
 - **Columns**:
-  - **league_id**: Integer, NOT NULL - Unique identifier
-  - **league_name**: Text, NOT NULL - Name of the league
+  - **league_name**: Text, Not null - Name of the league
 - **Keys and Indexes**:
-  - **Primary Key**: league_id
+  - **Primary Key**
+    - ***league_id***: Integer, Not null - Unique identifier for the league
 
 ## Views
 

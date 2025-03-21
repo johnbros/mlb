@@ -149,10 +149,10 @@ def get_all_game_ids(start_year = 1903, end_year = 2024, start_month=1, end_mont
     
     leagues = {
         'MLB': range(start_year, end_year + 1),
-        'AAA': range(2005, end_year + 1),
-        'AA': range(2005, end_year + 1),
-        'A+': range(2005, end_year + 1),
-        'A': range(2005, end_year + 1),
+        'AAA': range(max(2005, start_year), end_year + 1),
+        'AA': range(max(2005, start_year), end_year + 1),
+        'A+': range(max(2005, start_year), end_year + 1),
+        'A': range(max(2005, start_year), end_year + 1),
     }
 
     # 10 Threads for different years
@@ -178,7 +178,7 @@ def get_all_game_ids(start_year = 1903, end_year = 2024, start_month=1, end_mont
 #             future.result()  # This raises exceptions if any thread fails
 
 
-get_all_game_ids()
+get_all_game_ids(start_year=2025, end_year=2025)
 
 do_failed()
 
