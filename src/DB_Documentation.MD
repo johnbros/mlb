@@ -11,11 +11,12 @@
 
 - **Description**: General game entry most tables are linked to this in some form or another
 - **Columns**:
-  - **h_team_id**: Integer, NOT NULL - ID of the home team
+  - **h_team_id**: Integer, Not null - ID of the home team
+  - **a_team_id**: Integer, Not null - ID of the away team
   - **season_year**: Integer, GENERATED ALWAYS AS (EXTRACT(year FROM date)) STORED - Calculated field for the season year
-  - **[Additional game fields not shown in schema excerpt]**
 - **Keys and Indexes**:
-  - **Primary Key**: Likely a game_id field (referenced in other tables but not shown in the excerpt)
+  - **Primary Key**
+    - ***game_id***: Identifier of each individual game, reused mlbs gamePK
   - **Foreign Keys**: h_team_id references teams(team_id)
 
 ### Table: Teams
