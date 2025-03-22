@@ -1,4 +1,4 @@
-from psycopg2 import pool
+from psycopg2 import pool, IntegrityError
 import psycopg2
 import json
 import concurrent.futures
@@ -26,23 +26,23 @@ def non_stat_cast_pitches():
     pass
 
 def get_name_and_id(type, data):
-    if type == 'springVenue':
-        array = 'venue'
-    elif type == 'springLeague':
-        array = 'league'
-    else:
-        array = type
+    array = 'venue' if type == 'springVenue' else 'league' if type == 'springLeague' else type
 
     ####Get the id and name of the division, league, venue, or spring league####
-    _id = data.get(f'{type}', {}).get('id')#Ex. 201
-    try:
-        _name = data.get(f'{type}', {}).get('name')#Ex. AL East
-    except:
-        try:
-            response = requests.get(f"{MLB_API_BASE}{data.get(f'{type}', {}).get('link')}")
-            _name = response.json().get(f'{array}s')[0].get('name')
-        except:
-            _name = None
+    _id = data.get(type, {}).get('id')
+    _name = data.get(type, {}).get('name')
+    if _id is None or _name is None:
+        link = data.get(type, {}).get('link')
+        if link:
+            try:
+                response = requests.get(f"{MLB_API_BASE}{link}")
+                response.raise_for_status()  
+                json_data = response.json().get(f"{array}s", [{}])[0]
+                _id = _id or json_data.get('id') 
+                _name = _name or json_data.get('name')
+            except (requests.RequestException, IndexError, KeyError) as e:
+                return None, None
+
     return _id, _name
 
 
@@ -52,43 +52,103 @@ def parse_team_data(team_data, year):
     team_id = team_data.get('id')#Ex. 111
     conn = conn_pool.getconn()
     cursor = conn.cursor()
+
+    try:
+        ####Information for the teams table####
+        team_name = team_data.get('name')#Ex. Boston Red Sox
+        club_name = team_data.get('clubName')#Ex. Red Sox
+        team_abr = team_data.get('abbreviation')#Ex. BOS
+        team_location = team_data.get('locationName')#Ex. Boston
+        first_year = team_data.get('firstYearOfPlay')#Ex. 1901
+        ########################################
+
+        ###Put team data into the teams table###
+        ###Update anything thats changed since the last update###
+        cursor.execute("""
+            INSERT INTO teams (team_id, team_name, club_name, team_abr, team_location, first_year)
+            VALUES (%s, %s, %s, %s, %s, %s) ON CONFLICT (team_id) DO 
+            UPDATE SET team_name = EXCLUDED.team_name,
+                        club_name = EXCLUDED.club_name,
+                        team_abr = EXCLUDED.team_abr,
+                        team_location = EXCLUDED.team_location
+            WHERE teams.team_name IS DISTINCT FROM EXCLUDED.team_name 
+                        OR teams.club_name IS DISTINCT FROM EXCLUDED.club_name
+                        OR teams.team_abr IS DISTINCT FROM EXCLUDED.team_abr
+                        OR teams.team_location IS DISTINCT FROM EXCLUDED.team_location
+        """, (team_id, team_name, club_name, team_abr, team_location, first_year))
+        ########################################
+
+        ##########Level of Play#################
+        level_id = team_data.get('sport', {}).get('id')#Ex. 1
+        ########################################
+
+        ##########Division######################
+        division_id, division_name = get_name_and_id('division', team_data)
+        if division_id and division_name:
+            cursor.execute("""
+                INSERT INTO divisions (division_id, division_name)
+                VALUES (%s, %s) ON CONFLICT (division_id) DO NOTHING
+            """, (division_id, division_name, level_id))
+        ########################################
+
+        ##########Venue#########################
+        venue_id, venue_name = get_name_and_id('venue', team_data)
+        if venue_id and venue_name:
+            cursor.execute("""
+                INSERT INTO venues (venue_id, venue_name)
+                VALUES (%s, %s) ON CONFLICT (venue_id) DO NOTHING
+            """, (venue_id, venue_name))
+        ########################################
+
+        ##########League########################
+        league_id, league_name = get_name_and_id('league', team_data)
+        if league_id and league_name:
+            cursor.execute("""
+                INSERT INTO leagues (league_id, league_name)
+                VALUES (%s, %s) ON CONFLICT (league_id) DO NOTHING
+            """, (league_id, league_name))
+        ########################################
+
+        ########Spring League###################
+        spring_league_id, spring_league_name = get_name_and_id('springLeague', team_data)
+        if spring_league_id and spring_league_name:
+            cursor.execute("""
+                INSERT INTO leagues (league_id, league_name)
+                VALUES (%s, %s) ON CONFLICT (league_id) DO NOTHING
+            """, (spring_league_id, spring_league_name))
+        ########################################
+
+        ########Spring Venue####################
+        spring_venue_id, spring_venue_name = get_name_and_id('springVenue', team_data)
+        if spring_venue_id and spring_venue_name:
+            cursor.execute("""
+                INSERT INTO venues (venue_id, venue_name)
+                VALUES (%s, %s) ON CONFLICT (venue_id) DO NOTHING
+            """, (spring_venue_id, spring_venue_name))
+        ########################################
+
+        #######Insert team data into team_seasons table#####
+        cursor.execute("""
+            INSERT INTO team_seasons (team_id, season_year, league_id, division_id, venue_id, spring_league_id, spring_venue_id, level_id)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (team_id, season_year) DO NOTHING
+        """, (team_id, year, league_id, division_id, venue_id, spring_league_id, spring_venue_id, level_id))
+        ########################################
+        conn.commit()
+
+    ##Error handling##
+    except IntegrityError as e:
+        print(f"Database Integrity Error: {e}")
+        conn.rollback()
     
-    ####Information for the teams table####
-    team_name = team_data.get('name')#Ex. Boston Red Sox
-    club_name = team_data.get('clubName')#Ex. Red Sox
-    team_abr = team_data.get('abbreviation')#Ex. BOS
-    team_location = team_data.get('locationName')#Ex. Boston
-    first_year = team_data.get('firstYearOfPlay')#Ex. 1901
-    ########################################
+    except Exception as e:
+        print(f"Unexpected Error: {e}")
+        conn.rollback()
 
-    ####Put team data into the teams table####
-
-    ##########Level of Play#################
-    level_id = team_data.get('sport', {}).get('id')#Ex. 1
-    ########################################
-
-    ##########Division######################
-    division_id, division_name = get_name_and_id('division', team_data)
-    ########################################
-
-    ##########Venue#########################
-    venue_id, venue_name = get_name_and_id('venue', team_data)
-    ########################################
-
-    ##########League########################
-    league_id, league_name = get_name_and_id('league', team_data)
-    ########################################
-
-    ########Spring League###################
-    spring_league, spring_league_name = get_name_and_id('springLeague', team_data)
-    ########################################
-
-    ########Spring Venue####################
-    spring_venue, spring_venue_name = get_name_and_id('springVenue', team_data)
-    ########################################
+    finally:
+        cursor.close()
+        conn_pool.putconn(conn)
     
-    cursor.close()
-    conn_pool.putconn(conn)
+    return team_id
 
 
 
@@ -126,9 +186,7 @@ def parse_data(data):
 
             if game_year >= MLB_STATCAST_YEAR:
                 pass
-
-
-        
+  
     
     except json.JSONDecodeError:
         raise ValueError("Invalid JSON data provided")
@@ -158,7 +216,6 @@ def main():
     with concurrent.futures.ThreadPoolExecutor(max_workers=95) as executor:
         for batch in pull_json():
             executor.map(post_data, batch)
-
 
 
 if __name__ == "__main__":

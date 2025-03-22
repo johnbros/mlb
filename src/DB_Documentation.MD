@@ -24,11 +24,38 @@
 
 - **Description**: Contains information about MLB teams
 - **Columns**:
-  - **team_id**: Integer, NOT NULL - Unique identifier for each team
+  - **team_name**: Text, Not null - Full name of the team(Ex. Boston Red Sox)
+  - **club_name**: Text, Not null - Name of the club(Ex. Red Sox)
+  - **team_abr**: Text, Not null - Abbreviation of the team(Ex. BOS)
+  - **team_location**: Text, Not null - Location of the team(Ex. Boston)
   - **first_year**: Integer - First year of team operation
-  - **[Additional team fields not shown in schema excerpt]**
 - **Keys and Indexes**:
-  - **Primary Key**: team_id
+  - **Primary Key**
+    - ***team_id***: Integer, Not null - Unique identifier for each team
+
+### Table: Team_Seasoons
+
+- **Description**: Contains information about MLB teams for a specific season
+- **Columns**:
+  - **team_name**: Text - Teams name for the season
+  - **venue_id**: Integer - Identifier for the teams home venue
+  - **league_id**: Integer - Identifier for the teams league
+  - **spring_venue_id**: Integer - Identifier for the teams home spring training venue
+  - **spring_league_id**: Integer - Indetifier for the teams spring training league
+  - **division_id**: Integer - Identifier for the teams division
+  - **level_id**: Integer - Identifier for the level the team playes in
+- **Keys and Indexes**:
+  - **Primary Keys**
+    - ***team_id***: Integer, Not null - Unique Identifier for the team
+    - ***season_year***: Integer, Not null - Year the season took place
+  - **Foreign Keys**
+    - ***team_id***: References teams(team_id)
+    - ***venue_id***: References venues(venue_id)
+    - ***league_id***: References leagues(league_id)
+    - ***spring_venue_id***: References venues(venue_id)
+    - ***spring_league_id***: References leagues(league_id)
+    - ***division_id***: References divisions(division_id)
+    - ***level_id***: References levels(level_id)
 
 ### Table: Players
 
@@ -125,6 +152,24 @@
 - **Keys and Indexes**:
   - **Primary Key**
     - ***league_id***: Integer, Not null - Unique identifier for the league
+
+### Table: Levels
+
+- **Description**: Level of Play (MLB, AAA, AA, A+, A)
+- **Columns**
+  - **level_abbreviation**: Char, Not null - Abbreviation of the level
+- **Keys and Indexes**:
+  - **Primary Key**
+    - ***level_id***: Integer, Not null - Unique identifier for the level
+
+### Table: Game_Types
+
+- **Description**: Type of game (Spring Training, Regular Season, etc)
+- **Columns**
+  - **type_name**: Text, Not null - Name of the game type
+- **Keys and Indexes**:
+  - **Primary Key**
+    - ***type_id***: Integer, Not null - Unique identifier for the type
 
 ## Views
 
