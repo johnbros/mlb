@@ -13,12 +13,23 @@
 - **Columns**:
   - **h_team_id**: Integer, Not null - ID of the home team
   - **a_team_id**: Integer, Not null - ID of the away team
-  - **season_year**: Integer, GENERATED ALWAYS AS (EXTRACT(year FROM date)) STORED - Calculated field for the season year
+  - **season_year**: Integer, Not null - Year of the game
+  - **venue_id**: Integer, Not null - ID of the Venue
+  - **level_id**: Integer, Not null - ID of the level of play (Ex. MLB, AAA, AA, etc.)
+  - **type_id**: Integer, Not null - ID of the type of game (Ex. Regular Season)
+  - **date**: Date, Not null - Official date of the game
+  - **game_time**: Time, Not null - Time the game was played
+  - **weather**: Text - Description of the weather
+  - **wind**: Text - Speed and Direction of the wind
 - **Keys and Indexes**:
   - **Primary Key**
     - ***game_id***: Identifier of each individual game, reused mlbs gamePK
   - **Foreign Keys**
-    -***h_team_id***: references teams(team_id)
+    -***(h_team_id, season_year)***: references team_seasons(team_id, season_year)
+    -***(a_team_id, season_year)***: references team_seasons(team_id, season_year)
+    -***venue_id***: references venues(venue_id)
+    -***level_id***: references levels(level_id)
+    -***type_id***: references types(type_id)
 
 ### Table: Teams
 
@@ -33,7 +44,7 @@
   - **Primary Key**
     - ***team_id***: Integer, Not null - Unique identifier for each team
 
-### Table: Team_Seasoons
+### Table: Team_Seasons
 
 - **Description**: Contains information about MLB teams for a specific season
 - **Columns**:
@@ -57,15 +68,188 @@
     - ***division_id***: References divisions(division_id)
     - ***level_id***: References levels(level_id)
 
+### Table: Team_Games
+
+- **Description**: Contains basic information about a teams game stats
+- **Columns**:
+  - **runs_scored**: Integer - number of runs the team scored
+  - **hits**: Integer - number of hits the team had
+  - **errors**: Integer - number of errors the team had
+  - **earned_runs_allowed**: Integer - number of earned runs the team allowed(1912 onward? double check this)
+  - **total_pitches_thrown**: Integer - number of pitches thrown(1950 onward? double check this)
+  - **innings_pitched**: Integer - number of innings pitched by the team
+  - **runs_allowed**: Integer - total number of runs allowed earned and unearned
+  - **rbis**: Integer - total number of runs batted in
+  - **strikeouts**: Integer - number of times the team struck out
+  - **walks**: Integer - number of times the team walked
+  - **home_runs**: Integer - number of home runs the team hit in the game
+  - **doubles**: Integer - number of doubles the team hit in the game
+  - **triples**: Integer - number of triples the team hit in the game
+  - **struck_out**: Integer - number of batters the teams pitchers struck out
+  - **walked**: Integer - number of batters the teams pitchers walked
+  - **home_runs_allowed**: Integer - number of home runs given up
+  - **doubles_allowed**: Integer - number of doubles given up
+  - **triples_allowed**: Integer - number of triples given up
+  - **hits_allowed**: Integer - number of hits given up
+- **Keys and Indexes**:
+  - **Primary Keys**
+    - ***game_id***: Integer, Not null - identifier of the game
+    - ***team_id***: Integer, Not null - identifier of the team
+  - **Foreign Keys**
+    - ***game_id***: References games(game_id)
+    - ***team_id***: References teams(team_id)
+
+### Table: Roster_Games
+
+- **Description**: Contains player ids for players that were on the roster for a game and if they were used
+- **Columns**:
+  - **was_used**: Boolean - indicator of whether or not the player was used
+- **Keys and Indexes**:
+  - **Primary Keys**
+    - ***player_id***: Integer, Not null - Unique identifier of the player
+    - ***game_id***: Integer, Not null - Unique identifier of the game
+    - ***team_id***: Integer, Not null - Unique identifier of the team the player was on in this game
+  - **Foreign Keys**
+    - ***player_id***: References players(player_id)
+    - ***game_id***: References games(game_id)
+    - ***team_id***: References teams(team_id)
+
+### Table: Player_Games_Fielding
+
+- **Description**: Contains players stats in the field for a specific game
+- **Columns**:
+  - **putouts**: Integer - Number of putouts the player is credited with
+  - **assists**: Integer - Number of assists the player is credited with
+  - **errors**: Integer - Number of errors the player is credited with
+  - **chances**: Integer - Calculated from Putouts + Assists + Errors
+  - **caught_stealing**: Integer - Number of players the player threw out stealing
+  - **stolen_bases_allowed**: Integer - Number of players the player allowed to steal a base
+  - **passed_balls**: Integer - Number of balls the player let by (Imagining this is a catcher only stat)
+  - **pickoffs**: Integer - Number of times a player picked off a player on base (Imagining this is a pitcher only stat)
+  - **position_id**: Integer, Not null - Identifier of the position the player was playing
+- - **Keys and Indexes**:
+  - **Primary Keys**
+    - ***player_id***: Integer, Not null - Unique identifier of the player
+    - ***game_id***: Integer, Not null - Unique identifier of the game
+    - ***team_id***: Integer, Not null - Unique identifier of the team the player was on in this game
+  - **Foreign Keys**
+    - ***player_id***: References players(player_id)
+    - ***game_id***: References games(game_id)
+    - ***team_id***: References teams(team_id)
+    - ***position_id***: References positions(position_id)
+
+### Table: Player_Games_Hitting
+
+- **Description**: Contains players offensive stats for a specific game
+- **Columns**:
+  - **at_bats**: Integer - Number of at bats the player had
+  - **hits**: Integer - Number of hits the player had
+  - **walks**: Integer - Number of walks the player had
+  - **total_bases**: Integer - Sum of bases the player had from hits (Single = 1, Double = 2, etc)
+  - **rbis**: Integer - Number of RBIs the player had
+  - **hbp**: Integer - Number of times the player was hit by a pitch
+  - **hrs**: Integer - Number of home runs the player hit
+  - **doubles**: Integer - Number of doubles the player hit
+  - **triples**: Integer - Number of triples the player hit
+  - **strikeouts**: Integer - Number of strikeouts the player had
+  - **plate_appearances**: Integer - Number of plate appearances the player had
+  - **runs**: Integer - Number of runs the player scored
+  - **stolen_bases**: Integer - Number of bases the player stole
+  - **caught_stealing**: Integer - Number of times the player was caught stealing
+  - **ground_into_double_play**: Integer - Number of times the player grounded into a double play
+  - **sac_bunts**: Integer - Number of sacrifice bunts the player had
+  - **sac_flies**: Integer - Number of sacrifice flies the player had
+  - **left_on_base**: Integer - Number of times the player was left on base
+  - **position_id**: Integer, Not null - Identifier of the position the player was playing
+  - **ground_into_triple_play**: Integer - Number of times the player grounded into a triple play
+  - **line_outs**: Integer - Number of times the player lined out
+  - **pop_outs**: Integer - Number of times the player popped out
+  - **fly_outs**: Integer - Number of times the player flied out
+  - **air_outs**: Integer - Number of times the player aired out
+  - **ground_outs**: Integer - Number of times the player grounded out
+  - **catchers_interference**: Integer - Number of times the at bat ended in catchers interference
+- - **Keys and Indexes**:
+  - **Primary Keys**
+    - ***player_id***: Integer, Not null - Unique identifier of the player
+    - ***game_id***: Integer, Not null - Unique identifier of the game
+    - ***team_id***: Integer, Not null - Unique identifier of the team the player was on in this game
+  - **Foreign Keys**
+    - ***player_id***: References players(player_id)
+    - ***game_id***: References games(game_id)
+    - ***team_id***: References teams(team_id)
+    - ***position_id***: References positions(position_id)
+
+### Table: Player_Games_Pitching
+
+- **Description**: Contains players offensive stats for a specific game
+- **Columns**:
+  - **innings_pitched**: Numeric - Number of innings the player pitched
+  - **batters_faced**: Integer - Number of batters the player faced
+  - **earned_runs**: Integer - Number of earned runs the pitcher gave up
+  - **runs_allowed**: Integer - Number of runs allowed while the player was pitching
+  - **hits_allowed**: Integer - Number of hits the pitcher gave up
+  - **strikeouts**: Integer - Number of strikeouts the player got
+  - **walks**: Integer - Number of walks the player gave up
+  - **home_runs_allowed**: Integer - Number of home runs the player gave up
+  - **hit_by_pitch**: Integer - Number of players the player hit with a pitch
+  - **wild_pitches**: Integer - Number of wild pitches the player threw
+  - **balks**: Integer - Number of balks the player had
+  - **pickoffs**: Integer - Number of players the player picked off
+  - **complete_game**: Boolean - True if it was a complete game, false otherwise
+  - **shutout**: Boolean - True if it was a shutout, false otherwise
+  - **save_opportunity**: Boolean - True if it was a save opportunity, false otherwise
+  - **inherited_runners**: Integer - Number of runners the player inherited on the bases
+  - **inherited_runners_scored**: Integer - Number of inherited runners that scored
+  - **pitches_thrown**: Integer - Number of pitches the player threw
+  - **strikes_thrown**: Integer - Number of strikes the player threw
+  - **balls_thrown**: Integer - Number of balls the player threw
+  - **save**: Boolean - True if it was a save, false otherwise
+  - **doubles_allowed**: Integer - Number of doubles the pitcher gave up
+  - **triples_allowed**: Integer - Number of triples the pitcher gave up
+  - **air_outs**: Integer - Number of air outs the pitcher got
+  - **line_outs**: Integer - Number of line outs the pitcher got
+  - **fly_outs**: Integer - Number of fly outs the pitcher got
+  - **pop_outs**: Integer - Number of pop outs the pitcher got
+  - **ground_outs**: Integer - Number of ground outs the pitcher got
+  - **win**: Boolean - True if it was a win, false otherwise
+  - **loss**: Boolean - True if it was a loss, false otherwise
+  - **hold**: Boolean - True if it was a hold, false otherwise
+  - **game_started**: Boolean - True if the game was started by the pitcher, false otherwise
+- **Keys and Indexes**:
+  - **Primary Keys**
+    - ***player_id***: Integer, Not null - Unique identifier of the player
+    - ***game_id***: Integer, Not null - Unique identifier of the game
+    - ***team_id***: Integer, Not null - Unique identifier of the team the player was on in this game
+  - **Foreign Keys**
+    - ***player_id***: References players(player_id)
+    - ***game_id***: References games(game_id)
+    - ***team_id***: References teams(team_id)
+
 ### Table: Players
 
 - **Description**: Player information and attributes
 - **Columns**:
-  - **player_id**: Integer, NOT NULL - Unique identifier for each player
-  - **sz_bot**: Numeric, NOT NULL - Bottom of strike zone measurement
-  - **[Additional player fields not shown in schema excerpt]**
+  - **player_name**: Text, Not null - Name of the player
+  - **player_birthday**: Date - Birthday of the player
+  - **position_id**: Integer - Primary position of the player
+  - **bat_side**: Char(1) - Side the player hits from
+  - **throw_side**: Char(1) - Side the player throws from
+  - **sz_top**: Numeric - Top of the players strike zone
+  - **sz_bot**: Numeric - Bottom of the players strike zone
 - **Keys and Indexes**:
-  - **Primary Key**: player_id
+  - **Primary Key**
+    - ***player_id***: Integer, Not null - Unique identifier for each player
+  - **Foreign Keys**
+    - **position_id**: References positions(position_id)
+
+### Table: Positions
+
+- **Description**: Positions of players
+- **Columns**:
+  - **position_name**: Text, Not null - Name of the position
+- **Keys and Indexes**:
+  - **Primary Key**
+    - ***position_id***: Integer, Not null - Indentifier of the position (as you would expect 1 = Pitcher, 2 = Catcher, etc.)
 
 ### Table: Venues
 
