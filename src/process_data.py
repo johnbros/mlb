@@ -893,6 +893,9 @@ def pull_json(batch_size=500, out_queue=None):
 
 
 def process_batches(out_queue, max_workers=95):
+    while out_queue.empty():
+        pass
+    
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
         while True:
             batch = out_queue.get()  # Get a batch from the queue
