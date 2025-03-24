@@ -264,40 +264,72 @@
 
 - **Description**: Data about individual innings in games
 - **Columns**:
-  - **inning_num**: Integer, NOT NULL - Inning number
-  - **inning_half**: CHAR(1) - 'T' for top or 'B' for bottom
-  - **[Additional inning fields not shown in schema excerpt]**
+  - **runs_scored**: Integer - Number of runs scored
+  - **hits**: Integer - Number of hits
+  - **errors**: Integer - Number of errors committed by the defense
+  - **left_on_base**: Integer - Number of runners left on base
 - **Keys and Indexes**:
+  - **Primary Keys**
+    - ***inning_num***: Integer, Not null - Inning number
+    - ***inning_half***: Char(1) - 'T' for top or 'B' for bottom
+    - ***game_id***: Integer, Not null - Identifier for the game
+  - **Foreign Keys**
+    - ***game_id***: References games(game_id)
   - **Constraints**: inning_half must be either 'T' or 'B'
 
 ### Table: Pitches
 
 - **Description**: Individual pitch information
 - **Columns**:
-  - **inning_num**: Integer, NOT NULL
-  - **inning_half**: CHAR(1) - 'T' for top or 'B' for bottom
-  - **[Additional pitch fields not shown in schema excerpt]**
+  - **pitch_outcome_id**: Integer - Unique identifier for the outcome of the pitch
+  - **pitch_data_id**: Integer - Unique identifier for statcast data from the pitch
+  - **balls**: Integer - Number of balls before the pitch was thrown
+  - **strikes**: Integer - Number of strikes before the pitch was thrown
+  - **outs**: Integer - Number of outs after the play finished
 - **Keys and Indexes**:
+  - **Primary Keys**
+    - ***game_id***: Integer, Not null - Identifier of the game
+    - ***inning_num***: Integer, Not null - Inning number the at bat was in
+    - ***inning_half***: Char(1) - 'T' for top or 'B' for bottom
+    - ***at_bat_num***: Integer, Not null - At bat in the inning
+    - ***pitch_num***: Integer, Not null - Number of the pitch during the at bat (1,2,3, etc)
+  - **Foreign Keys**
+    - ***(game_id, inning_num, inning_half, at_bat_num)***: References at_bats(game_id, inning_num, inning_half, at_bat_num)
+    - ***pitch_outcome_id***: References pitch_outcomes(p_outcome_id)
+    - ***pitch_data_id***: References pitch_data(pitch_data_id)
   - **Constraints**: inning_half must be either 'T' or 'B'
 
 ### Table: At_Bats
 
 - **Description**: Information about individual at-bats
 - **Columns**:
-  - **inning_num**: Integer, NOT NULL
-  - **inning_half**: CHAR(1) - 'T' for top or 'B' for bottom
-  - **[Additional at-bat fields not shown in schema excerpt]**
+  - **batter_id**: Integer - ID of the batter
+  - **pitcher_id**: Integer - ID of the pitcher
+  - **ab_outcome_id**: Integer - ID that references the ID of the outcome
+  - **at_bat_des**: Text - Description of the at bat outcome
+  - **bip_data_id**: Integer - ID that references data of a ball hit in play
 - **Keys and Indexes**:
+  - **Primary Keys**
+    - ***game_id***: Integer, Not null - Identifier of the game
+    - ***inning_num***: Integer, Not null - Inning number the at bat was in
+    - ***inning_half***: Char(1) - 'T' for top or 'B' for bottom
+    - ***at_bat_num***: Integer, Not null - At bat in the inning
+  - **Foreign Keys**
+    - ***(game_id, inning_num, inning_half)***: References innings(game_id, inning_num, inning_half)
+    - ***bip_data_id***: References bip_data(bip_data_id)
+    - ***ab_outcome_id***: References ab_outcomes(ab_outcome_id)
+    - ***batter_id***: References players(player_id)
+    - ***pitcher_id***: References players(player_id)
   - **Constraints**: inning_half must be either 'T' or 'B'
 
 ### Table: Pitch_Type
 
 - **Description**: Lookup table for pitch types
 - **Columns**:
-  - **pitch_type_id**: Integer, NOT NULL - Unique identifier
   - **pitch_type_name**: Text, NOT NULL - Name of the pitch type (fastball, slider, etc.)
 - **Keys and Indexes**:
-  - **Primary Key**: pitch_type_id
+  - **Primary Key**
+    - ***pitch_type_id***: Integer, Not null - Unique identifier of the pitch type
 
 ### Table: Pitch_Data
 
@@ -313,11 +345,32 @@
 
 - **Description**: Ball-in-play data
 - **Columns**:
-  - **bip_data_id**: Integer, NOT NULL - Unique identifier
+  - **bip_data_id**: Integer, Not null - Unique identifier
   - **bat_speed**: Numeric - Bat speed measurement
   - **[Additional BIP data fields not shown in schema excerpt]**
 - **Keys and Indexes**:
   - **Primary Key**: bip_data_id
+
+### Table: Pitch_Outcomes
+
+- **Description**: Table that holds common pitch outcomes
+- **columns**:
+  - **p_description**: Text - description of the outcome
+  - **p_result_code**: Text - code of the outcome
+  - **p_call_name**: Text - name of the call
+  - **p_call**: Text - The actual call
+- **Keys and Indexes**
+  - **Primary Key**
+    - ***p_outcome_id***: Integer - Identifier for the outcome
+
+### Table: Ab_Outcomes
+
+- **Description**: Table that holds common at bat outcomes
+- **columns**:
+  - **ab_outcome_label**: Text - description of the outcome
+- **Keys and Indexes**
+  - **Primary Key**
+    - ***ab_outcome_id***: Integer - Identifier for the outcome
 
 ### Table: Divisions
 

@@ -447,12 +447,180 @@ def parse_players(players, team_id, game_id):
             post_pitching_stats(player_id, game_id, team_id, pitching_stats)
         if fielding_stats:
             post_fielding_stats(player_id, game_id, team_id, player_position_id, fielding_stats)
+
+# Processes the innings data
+def process_innings(innings, game_id):
+    conn = conn_pool.getconn()
+    cursor = conn.cursor()
+    for inning in innings:
+        try:
+            inning_number = inning.get('num')
+            inning_home = inning.get('home', {})
+            inning_away = inning.get('away', {})
+
+            #######Home Team/Bottom Half#######
+            home_hits = inning_home.get('hits')
+            home_runs = inning_home.get('runs')
+            away_errors = inning_away.get('errors')
+            home_lob = inning_home.get('leftOnBase')
+            home_half = 'B'
+            cursor.execute("""
+                INSERT INTO innings (game_id, inning_number, inning_half, hits, runs, errors, lob)
+                VALUES (%s, %s, %s, %s, %s, %s, %s) ON CONFLICT (game_id, inning_number, team_id) DO NOTHING
+            """, (game_id, inning_number, home_half, home_hits, home_runs, away_errors, home_lob))
+            ###################################
+            #######Away Team/Top Half##########
+            away_hits = inning_away.get('hits')
+            away_runs = inning_away.get('runs')
+            home_errors = inning_home.get('errors')
+            away_lob = inning_away.get('leftOnBase')
+            away_half = 'T'
+            cursor.execute("""
+                INSERT INTO innings (game_id, inning_number, inning_half, hits, runs, errors, lob)
+                VALUES (%s, %s, %s, %s, %s, %s, %s) ON CONFLICT (game_id, inning_number, team_id) DO NOTHING
+            """, (game_id, inning_number, away_half, away_hits, away_runs, home_errors, away_lob))
+            ###################################
+            conn.commit()
+
+        except Exception as e:
+            print(f"Error inserting inning data: {e}")
+            conn.rollback()
+
+
+    cursor.close()
+    conn_pool.putconn(conn)
+
+
+# Process the pitch by pitch data
+def process_pitch_by_pitch_pre_statcast(pitches, game_id, inning_half):
+    inning_num = 1
+    last_at_bat = 1
+    at_bat_num = 1
+    pitch_num = 1
+    conn = conn_pool.getconn()
+    cursor = conn.cursor()
+    #Iterate through the pitches
+    for pitch in pitches:
+        #Check if we are in a new inning or at bat
+        inning = pitch.get('inning')
+        if inning != inning_num:
+            inning_num = inning
+            at_bat_num = 1
+        
+        #check if we are in a new at bat if so add it into the at bats table
+        at_bat = pitch.get('ab_number')
+        if at_bat != last_at_bat:
+            at_bat_num += 1
+            pitch_num = 1
+
+            #Get the batter and the pitcher
+            batter_id = pitch.get('batter')
+            pitcher_id = pitch.get('pitcher')
+            
+            #Get at bat outcome result
+            ab_outcome_label = pitch.get('result')
+
+            try:
+                #Insert ab_outcome_label
+                cursor.execute("""
+                    INSERT INTO ab_outcomes (ab_outcome_label)
+                    VALUES (%s) ON CONFLICT (ab_outcome_label) DO NOTHING
+                    RETURNING ab_outcome_id
+                """, (ab_outcome_label,))
+
+                #Get at bat outcome id
+                ab_outcome_id = cursor.fetchone()[0]
+                conn.commit()
+
+                #Get the description of the at bat result
+                at_bat_des = pitch.get('des')
+
+                cursor.execute("""
+                    INSERT INTO at_bats (game_id, inning_num, inning_half, at_bat_num, batter_id, pitcher_id, ab_outcome_id, at_bat_des)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (game_id, inning, inning_half, at_bat_num) DO NOTHING
+                """, (game_id, inning_num, inning_half, at_bat_num, batter_id, pitcher_id, ab_outcome_id, at_bat_des))
+                conn.commit()
+
+            except Exception as e:
+                print(f"Error inserting at bat data: {e}")
+                conn.rollback()
+
+        #Get information about the pitch outcome
+        p_call = pitch.get('call')
+        p_call_name = pitch.get('call_name')
+        p_description = pitch.get('description')
+        p_result_code = pitch.get('result_code')
+        try: 
+            #Insert pitch data
+            cursor.execute("""
+                INSERT INTO pitch_outcomes (p_call, p_call_name, p_description, p_result_code)
+                VALUES (%s, %s, %s, %s) ON CONFLICT (p_call, p_call_name, p_description, p_result_code) DO NOTHING
+                RETURNING p_outcome_id
+            """, (p_call, p_call_name, p_description, p_result_code))
+
+            #Get the outcome_id
+            p_outcome_id = cursor.fetchone()[0]
+            conn.commit()
+        except:
+            print(f"Error inserting pitch data: {e}")
+            conn.rollback()
+
+
+        balls = pitch.get('balls')
+        strikes = pitch.get('strikes')
+        outs = pitch.get('outs')
+
+
+
+        #Update for the next pitch so we can track where we are#
+        last_at_bat = at_bat_num
+        pitch_num += 1
     
 
+    cursor.close()
+    conn_pool.putconn(conn)
+
+# Process the pitch by pitch data for statcast years
+def process_pitch_by_pitch_statcast(pitches, game_id, inning_half):
+    inning_num = 1
+    last_at_bat = 1
+    at_bat_num = 1
+    pitch_num = 1
+    #Iterate through the pitches
+    for pitch in pitches:
+        #Check if we are in a new inning or at bat
+        inning = pitch.get('inning')
+        if inning != inning_num:
+            inning_num = inning
+            at_bat_num = 1
+        
+        #check if we are in a new at bat
+        at_bat = pitch.get('ab_number')
+        if at_bat != last_at_bat:
+            at_bat_num += 1
+            pitch_num = 1
+
+            #Get the batter and the pitcher
+            batter_id = pitch.get('batter')
+            pitcher_id = pitch.get('pitcher')
+
+            #Insert ab_outcome_label and get the id
+            ab_outcome_label = pitch.get('ab_result')
+            cursor.execute("""
+                INSERT INTO ab_outcomes (ab_outcome_label)
+                VALUES (%s) ON CONFLICT (ab_outcome_label) DO NOTHING
+                RETURNING ab_outcome_id
+            """, (ab_outcome_label,))
+            ab_outcome_id = cursor.fetchone()[0]
+            conn.commit()
+
+            
 
 
 
-
+        #Update for the next pitch so we can track where we are#
+        last_at_bat = at_bat_num
+        pitch_num += 1
 
 def parse_game_data(data):
     try:
@@ -500,14 +668,22 @@ def parse_game_data(data):
 
         #Get the players stats and insert them into their tables
         away_roster = game_json.get('boxscore', {}).get('teams', {}).get('away', {}).get('players', {})
+        parse_players(away_roster, away_team_id, game_id)
         home_roster = game_json.get('boxscore', {}).get('teams', {}).get('home', {}).get('players', {})
+        parse_players(home_roster, home_team_id, game_id)
+
+        game_innings = game_json.get('scoreboard', {}).get('linescore', {}).get('innings', [])
 
         if game_year >= PLAY_BY_PLAY_YEAR:
             #get pitch by pitch
             away_pitches = game_json.get('team_away', [])#this is the away team pitching
-            home_pitches = game_json.get('team_home', [])#this is the home team pitching
+            home_pitches = game_json.get('team_home', [])#this is the home team pitching        
+            
 
-            if game_year >= MLB_STATCAST_YEAR:
+            # Process the pitch by pitch data for statcast years
+            if (game_year >= MLB_STATCAST_YEAR and game_level_id == 1) or (game_year >= TRIPLE_A_STATCAST_YEAR and game_level_id == 11):
+                pass
+            else:
                 pass
   
     
