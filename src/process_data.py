@@ -6,6 +6,7 @@ import passwords
 import threading
 import datetime
 import requests
+import queue
 from endpoints import MLB_API_BASE
 
 PLAY_BY_PLAY_YEAR = 1950
@@ -871,27 +872,48 @@ def parse_game_data(data):
         pass
             
         
-def pull_json(batch_size = 500):
+def pull_json(batch_size=500, out_queue=None):
+    # Establish the connection
     conn = psycopg2.connect(dbname="mlb_data", user="postgres", password=f"{passwords.password}", host="127.0.0.1", port="5432")
-    cursor = conn.cursor()
-    #Get the game data and type from the game_info table (need type since its not available in the game_data)
-    cursor.execute("SELECT game_data, game_type, league FROM game_info ORDER BY game_date ASC") #Order by date for processing (oldest first so we capture franchise name updates)
+    cursor = conn.cursor(name='server_cursor')  # Using server-side cursor to avoid memory issues
 
-    # Fetch the data in batches of batch_size, yield will return each batch when it is fetched. 
+    # Execute the query to get the data from the game_info table
+    cursor.execute("SELECT game_data, game_type, league FROM game_info ORDER BY game_date ASC")
+
+    # Fetch the data in batches and put each batch in the output queue for processing
     while True:
         batch = cursor.fetchmany(batch_size)
         if not batch:
-            break # Breaks when there is no more rows in the data
-        yield batch
+            break  # Break when no more rows are available
+        out_queue.put(batch)  # Put the batch in the queue
 
     cursor.close()
     conn.close()
+    out_queue.put(None)  # Sentinel value to indicate that no more batches are coming
+
+
+def process_batches(out_queue, max_workers=95):
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        while True:
+            batch = out_queue.get()  # Get a batch from the queue
+            if batch is None:  # Sentinel value indicating end of data
+                break
+            # Process the batch concurrently
+            futures = [executor.submit(parse_game_data, game) for game in batch]
+            concurrent.futures.wait(futures)  # Wait for all futures to complete
 
 def main():
-    # Use a thread pool to process the data
-    with concurrent.futures.ThreadPoolExecutor(max_workers=95) as executor:
-        for batch in pull_json():
-            executor.map(parse_game_data, batch)
+    out_queue = queue.Queue()  # Create a queue to pass batches between threads
+
+    # Create the thread for pulling data (fetching in batches)
+    batching_thread = threading.Thread(target=pull_json, args=(500, out_queue))
+    batching_thread.start()
+
+    # Start the batch processing in the main thread or with a separate pool of threads
+    process_batches(out_queue)
+
+    # Wait for the batching thread to finish (though it's finished when no more batches are in the queue)
+    batching_thread.join()
 
 
 if __name__ == "__main__":
