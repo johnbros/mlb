@@ -34,14 +34,15 @@ def try_failed_game_ids():
                     game_response = requests.get(game_url)
                     if game_response.status_code == 200:
                         game_data = game_response.json()
-                        game_json = json.dumps(game_data)
-                        print(date)
-                        cursor.execute("""
-                            INSERT INTO game_info (game_id, game_date, league, game_type, game_data)
-                            VALUES (%s, %s, %s, %s, %s::jsonb)
-                        """, (game_id, date, league, game_type, game_json))
-                        conn.commit()
-                        game_queue.task_done()
+                        if game_data.get("game_status") == "F":
+                            game_json = json.dumps(game_data)
+                            print(date)
+                            cursor.execute("""
+                                INSERT INTO game_info (game_id, game_date, league, game_type, game_data)
+                                VALUES (%s, %s, %s, %s, %s::jsonb)
+                            """, (game_id, date, league, game_type, game_json))
+                            conn.commit()
+                            game_queue.task_done()
                     else:
                         print(f"Failed retry for id {game_id}, code: {game_response.status_code}")
                 else:
@@ -113,13 +114,14 @@ def get_game_jsons(league, dates):
 
                     if game_response.status_code == 200:
                         game_data = game_response.json()
-                        game_json = json.dumps(game_data)
-
-                        cursor.execute("""
-                            INSERT INTO game_info (game_id, game_date, league, game_type, game_data)
-                            VALUES (%s, %s, %s, %s, %s::jsonb)
-                        """, (game_id, date, league, game_type, game_json))
-                        conn.commit()
+                        if game_data.get("game_status") == "F":
+                            game_json = json.dumps(game_data)
+                            print(date)
+                            cursor.execute("""
+                                INSERT INTO game_info (game_id, game_date, league, game_type, game_data)
+                                VALUES (%s, %s, %s, %s, %s::jsonb)
+                            """, (game_id, date, league, game_type, game_json))
+                            conn.commit()
                     else:
                         with failed_game_ids_lock:
                             failed_game_ids.add((game_id, date, league, game_type)) 
@@ -145,7 +147,7 @@ def get_game_ids(start_date, end_date, league, sport_id):
             
 
 
-def get_all_game_ids(start_year = 1903, end_year = 2024, start_month=1, end_month=12):
+def get_all_game_ids(start_year = 1903, end_year = 2025, start_month=1, end_month=12):
     
     leagues = {
         'MLB': range(start_year, end_year + 1),
@@ -178,7 +180,7 @@ def get_all_game_ids(start_year = 1903, end_year = 2024, start_month=1, end_mont
 #             future.result()  # This raises exceptions if any thread fails
 
 
-get_all_game_ids(start_year=2025, end_year=2025)
+get_all_game_ids(start_year=2023, end_year=2025)
 
 do_failed()
 

@@ -797,6 +797,7 @@ def parse_game_data(data):
 
         ##############Get game & venue id######################
         game_id = game_json.get('scoreboard', {}).get('gamePk')
+        print(f"Processing game: {game_id}")
         venue_id = game_json.get('venue_id')
         #######################################################
 
@@ -850,8 +851,7 @@ def parse_game_data(data):
         raise ValueError("Invalid JSON data provided")
     except Exception as e:
         raise Exception(f"Error parsing game data: {str(e)}")
-    
-    finally:
+    else:
         try:
             game_id_str = str(game_id).zfill(6)
             conn = conn_pool.getconn()
@@ -860,22 +860,17 @@ def parse_game_data(data):
                 DELETE FROM game_info WHERE game_id = %s
             """, (game_id_str,))
             conn.commit()
-
-        except Exception as e:
-            print(f"Error closing connection: {e}")
-            conn.rollback()
-        
-        finally:
             print(f"Game {game_id_str} processed")
+        except Exception as e:
+            print(f"Error removing game from game_info: {e}")
+            conn.rollback()
+        finally:
             cursor.close()
             conn_pool.putconn(conn)
+    finally:
+        pass
             
         
-
-
-
-
-
 def pull_json(batch_size = 500):
     conn = psycopg2.connect(dbname="mlb_data", user="postgres", password=f"{passwords.password}", host="127.0.0.1", port="5432")
     cursor = conn.cursor()
