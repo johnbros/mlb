@@ -19,6 +19,38 @@ LEVEL_IDS = {'MLB': 1, 'AAA': 11, 'AA': 12, 'A+': 13, 'A': 14}
 
 conn_pool = pool.SimpleConnectionPool(5, 95, dbname="mlb_data", user="postgres", password=f"{passwords.password}", host="127.0.0.1", port="5432")
 
+
+PLAYER_IDS = set()
+VENUE_IDS = set()
+DIVISION_IDS = set()
+LEAGUE_IDS = set()
+TEAM_SEASONS = set()
+
+# Load the data from the database to avoid repeat inserts
+def load_data():
+    conn = None
+    cursor = None
+    try:
+        conn = conn_pool.getconn()
+        cursor = conn.cursor()
+        cursor.execute("SELECT player_id FROM players")
+        PLAYER_IDS = {player_id[0] for player_id in cursor.fetchall()}
+        cursor.execute("SELECT venue_id FROM venues")
+        VENUE_IDS = {venue_id[0] for venue_id in cursor.fetchall()}
+        cursor.execute("SELECT division_id FROM divisions")
+        DIVISION_IDS = {division_id[0] for division_id in cursor.fetchall()}
+        cursor.execute("SELECT league_id FROM leagues")
+        LEAGUE_IDS = {league_id[0] for league_id in cursor.fetchall()}
+        cursor.execute("SELECT team_id, season_year FROM team_seasons")
+        TEAM_SEASONS = {(team_id[0], team_id[1]) for team_id in cursor.fetchall()}
+    except Exception as e:
+        print(f"Error loading data: {e}")
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn_pool.putconn(conn)
+
 def safe_float(value, default=None):
     if value is None:
         return default
@@ -87,71 +119,84 @@ def parse_team_data(team_data, year):
 
         ##########Division######################
         division_id, division_name = get_name_and_id('division', team_data)
-        if division_id and division_name:
-            cursor.execute("""
-                INSERT INTO divisions (division_id, division_name)
-                VALUES (%s, %s) ON CONFLICT (division_id) DO NOTHING
-            """, (division_id, division_name))
-        else:  
-            division_id = None
-        conn.commit()
+        if division_id not in DIVISION_IDS:
+            if division_id and division_name:
+                cursor.execute("""
+                    INSERT INTO divisions (division_id, division_name)
+                    VALUES (%s, %s) ON CONFLICT (division_id) DO NOTHING
+                """, (division_id, division_name))
+            else:  
+                division_id = None
+            conn.commit()
+            DIVISION_IDS.add(division_id)
         ########################################
 
         ##########Venue#########################
         venue_id, venue_name = get_name_and_id('venue', team_data)
-        if venue_id and venue_name:
-            cursor.execute("""
-                INSERT INTO venues (venue_id, venue_name)
-                VALUES (%s, %s) ON CONFLICT (venue_id) DO NOTHING
-            """, (venue_id, venue_name))
-        else:
-            venue_id = None
-        conn.commit()
+        if venue_id not in VENUE_IDS:
+            if venue_id and venue_name:
+                cursor.execute("""
+                    INSERT INTO venues (venue_id, venue_name)
+                    VALUES (%s, %s) ON CONFLICT (venue_id) DO NOTHING
+                """, (venue_id, venue_name))
+            else:
+                venue_id = None
+            conn.commit()
+            VENUE_IDS.add(venue_id)
         ########################################
 
         ##########League########################
         league_id, league_name = get_name_and_id('league', team_data)
-        if league_id and league_name:
-            cursor.execute("""
-                INSERT INTO leagues (league_id, league_name)
-                VALUES (%s, %s) ON CONFLICT (league_id) DO NOTHING
-            """, (league_id, league_name))
-        else:
-            league_id = None
-        conn.commit()
+        if league_id not in LEAGUE_IDS:
+            if league_id and league_name:
+                cursor.execute("""
+                    INSERT INTO leagues (league_id, league_name)
+                    VALUES (%s, %s) ON CONFLICT (league_id) DO NOTHING
+                """, (league_id, league_name))
+            else:
+                league_id = None
+            conn.commit()
+            LEAGUE_IDS.add(league_id)
         ########################################
 
         ########Spring League###################
         spring_league_id, spring_league_name = get_name_and_id('springLeague', team_data)
-        if spring_league_id and spring_league_name:
-            cursor.execute("""
-                INSERT INTO leagues (league_id, league_name)
-                VALUES (%s, %s) ON CONFLICT (league_id) DO NOTHING
-            """, (spring_league_id, spring_league_name))
-        else:
-            spring_league_id = None
-        conn.commit()
+        if spring_league_id not in LEAGUE_IDS:
+            if spring_league_id and spring_league_name:
+                cursor.execute("""
+                    INSERT INTO leagues (league_id, league_name)
+                    VALUES (%s, %s) ON CONFLICT (league_id) DO NOTHING
+                """, (spring_league_id, spring_league_name))
+            else:
+                spring_league_id = None
+            conn.commit()
+            LEAGUE_IDS.add(spring_league_id)
         ########################################
 
         ########Spring Venue####################
         spring_venue_id, spring_venue_name = get_name_and_id('springVenue', team_data)
-        if spring_venue_id and spring_venue_name:
-            cursor.execute("""
-                INSERT INTO venues (venue_id, venue_name)
-                VALUES (%s, %s) ON CONFLICT (venue_id) DO NOTHING
-            """, (spring_venue_id, spring_venue_name))
-        else:
-            spring_venue_id = None
-        conn.commit()
+        if spring_venue_id not in VENUE_IDS:
+            if spring_venue_id and spring_venue_name:
+                cursor.execute("""
+                    INSERT INTO venues (venue_id, venue_name)
+                    VALUES (%s, %s) ON CONFLICT (venue_id) DO NOTHING
+                """, (spring_venue_id, spring_venue_name))
+            else:
+                spring_venue_id = None
+            conn.commit()
+            VENUE_IDS.add(spring_venue_id)
         ########################################
 
         #######Insert team data into team_seasons table#####
-        cursor.execute("""
-            INSERT INTO team_seasons (team_id, season_year, league_id, division_id, venue_id, spring_league_id, spring_venue_id, level_id, team_name)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (team_id, season_year) DO NOTHING
-        """, (team_id, year, league_id, division_id, venue_id, spring_league_id, spring_venue_id, level_id, team_name))
+        if (team_id, year) not in TEAM_SEASONS:
+            cursor.execute("""
+                INSERT INTO team_seasons (team_id, season_year, league_id, division_id, venue_id, spring_league_id, spring_venue_id, level_id, team_name)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (team_id, season_year) DO NOTHING
+            """, (team_id, year, league_id, division_id, venue_id, spring_league_id, spring_venue_id, level_id, team_name))
+            conn.commit()
+            TEAM_SEASONS.add((team_id, year))
         ########################################
-        conn.commit()
+            
 
     ##Error handling##
     except IntegrityError as e:
@@ -286,56 +331,61 @@ def post_player(player_data, game_id):
     player_id = player_data.get('id')
     conn = None
     cursor = None
-
-    if player_id == 0:
-        player_name = 'Unknown'
-        try:
+    if player_id not in PLAYER_IDS:
+        if player_id == 0:
+            player_name = 'Unknown'
+            try:
+                conn = conn_pool.getconn()
+                cursor = conn.cursor()
+                cursor.execute("""
+                    INSERT INTO players (player_id, player_name)
+                    VALUES (%s, %s) ON CONFLICT (player_id) DO NOTHING
+                """, (player_id, player_name))
+                conn.commit()
+                PLAYER_IDS.add(player_id)
+            except Exception as e:
+                print(f"Error inserting player data: {e}")
+                if conn:
+                    conn.rollback()
+            finally:
+                if cursor:
+                    cursor.close()
+                if conn:
+                    conn_pool.putconn(conn)
+            return player_id
+        player_name = player_data.get('fullName')
+        try: 
+            # Call the api and get the players information
+            response = requests.get(f"{MLB_API_BASE}{link}")
+            response.raise_for_status()
+            json_data = response.json().get('people', [{}])[0]
+            player_id = player_id or json_data.get('id') 
+            player_name = player_name or json_data.get('fullName')
+            player_birthday = json_data.get('birthDate')
+            position_data = json_data.get('primaryPosition', {})
+            position_id = parse_position(position_data)
+            bat_side = json_data.get('batSide', {}).get('code')
+            throw_side = json_data.get('pitchHand', {}).get('code')
+            sz_top = json_data.get('strikeZoneTop')
+            sz_bot = json_data.get('strikeZoneBottom')
             conn = conn_pool.getconn()
             cursor = conn.cursor()
             cursor.execute("""
-                INSERT INTO players (player_id, player_name)
-                VALUES (%s, %s) ON CONFLICT (player_id) DO NOTHING
-            """, (player_id, player_name))
+                INSERT INTO players (player_id, player_name, player_birthday, position_id, bat_side, throw_side, sz_top, sz_bot)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (player_id) DO UPDATE
+                SET player_name = EXCLUDED.player_name WHERE players.player_name IS DISTINCT FROM EXCLUDED.player_name
+            """, (player_id, player_name, player_birthday, position_id, bat_side, throw_side, sz_top, sz_bot))
             conn.commit()
-        except Exception as e:
-            print(f"Error inserting player data: {e}")
+            PLAYER_IDS.add(player_id)
+        except (requests.RequestException, IndexError, KeyError) as e:
+            print(f"Error getting player data: {e}")
             if conn:
                 conn.rollback()
         finally:
             if cursor:
                 cursor.close()
-            if conn:
+            if conn:    
                 conn_pool.putconn(conn)
-        return player_id
-    player_name = player_data.get('fullName')
-    try: 
-        # Call the api and get the players information
-        response = requests.get(f"{MLB_API_BASE}{link}")
-        response.raise_for_status()
-        json_data = response.json().get('people', [{}])[0]
-        player_id = player_id or json_data.get('id') 
-        player_name = player_name or json_data.get('fullName')
-        player_birthday = json_data.get('birthDate')
-        position_data = json_data.get('primaryPosition', {})
-        position_id = parse_position(position_data)
-        bat_side = json_data.get('batSide', {}).get('code')
-        throw_side = json_data.get('pitchHand', {}).get('code')
-        sz_top = json_data.get('strikeZoneTop')
-        sz_bot = json_data.get('strikeZoneBottom')
-        conn = conn_pool.getconn()
-        cursor = conn.cursor()
-        cursor.execute("""
-            INSERT INTO players (player_id, player_name, player_birthday, position_id, bat_side, throw_side, sz_top, sz_bot)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (player_id) DO UPDATE
-            SET player_name = EXCLUDED.player_name WHERE players.player_name IS DISTINCT FROM EXCLUDED.player_name
-        """, (player_id, player_name, player_birthday, position_id, bat_side, throw_side, sz_top, sz_bot))
-        conn.commit()
-    except (requests.RequestException, IndexError, KeyError) as e:
-        print(f"Error getting player data: {e}")
-        conn.rollback()
-    finally:
-        cursor.close()
-        conn_pool.putconn(conn)
 
     return player_id
 
@@ -974,6 +1024,7 @@ def process_batches(out_queue, max_workers=95):
 def main():
     out_queue = queue.Queue()  # Create a queue to pass batches between threads
 
+    load_data() # Load the data from the database (player_ids, venue_ids, team_seasons etc)
     # Create the thread for pulling data (fetching in batches)
     batching_thread = threading.Thread(target=pull_json, args=(500, out_queue))
     batching_thread.start()
