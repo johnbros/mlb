@@ -609,14 +609,16 @@ def process_innings(innings, game_id):
 # Process the pitch by pitch data
 def process_pitch_by_pitch_pre_statcast(pitches, game_id, inning_half):
     inning_num = 1
-    last_at_bat = 1
-    at_bat_num = 1
+    last_at_bat = 0
+    at_bat_num = 0
     pitch_num = 1
-    conn = conn_pool.getconn()
-    cursor = conn.cursor()
+    conn = None
+    cursor = None
     #Iterate through the pitches
     for pitch in pitches:
         #Check if we are in a new inning or at bat
+        conn = conn_pool.getconn()
+        cursor = conn.cursor()
         inning = pitch.get('inning')
         if inning != inning_num:
             inning_num = inning
@@ -634,15 +636,18 @@ def process_pitch_by_pitch_pre_statcast(pitches, game_id, inning_half):
             
             #Get at bat outcome result
             ab_outcome_label = pitch.get('result')
+            ab_outcome_id = None
 
             try:
                 #Insert ab_outcome_label
                 cursor.execute("""
                     INSERT INTO ab_outcomes (ab_outcome_label)
-                    VALUES (%s) ON CONFLICT (ab_outcome_label) DO NOTHING
+                    VALUES (%s) ON CONFLICT (ab_outcome_label) DO UPDATE
+                    SET ab_outcome_label = EXCLUDED.ab_outcome_label
                     RETURNING ab_outcome_id
                 """, (ab_outcome_label,))
 
+                
                 #Get at bat outcome id
                 ab_outcome_id = cursor.fetchone()[0]
                 conn.commit()
@@ -652,7 +657,7 @@ def process_pitch_by_pitch_pre_statcast(pitches, game_id, inning_half):
 
                 cursor.execute("""
                     INSERT INTO at_bats (game_id, inning_num, inning_half, at_bat_num, batter_id, pitcher_id, ab_outcome_id, at_bat_des)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (game_id, inning, inning_half, at_bat_num) DO NOTHING
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (game_id, inning_num, inning_half, at_bat_num) DO NOTHING
                 """, (game_id, inning_num, inning_half, at_bat_num, batter_id, pitcher_id, ab_outcome_id, at_bat_des))
                 conn.commit()
 
@@ -665,17 +670,20 @@ def process_pitch_by_pitch_pre_statcast(pitches, game_id, inning_half):
         p_call_name = pitch.get('call_name')
         p_description = pitch.get('description')
         p_result_code = pitch.get('result_code')
+        p_outcome_id = None
         try: 
             #Insert pitch data
             cursor.execute("""
                 INSERT INTO pitch_outcomes (p_call, p_call_name, p_description, p_result_code)
-                VALUES (%s, %s, %s, %s) ON CONFLICT (p_call, p_call_name, p_description, p_result_code) DO NOTHING
+                VALUES (%s, %s, %s, %s) ON CONFLICT (p_call, p_call_name, p_description, p_result_code) DO UPDATE 
+                SET p_call = EXCLUDED.p_call, p_call_name = EXCLUDED.p_call_name, p_description = EXCLUDED.p_description, p_result_code = EXCLUDED.p_result_code
                 RETURNING p_outcome_id
             """, (p_call, p_call_name, p_description, p_result_code))
 
+            conn.commit()
             #Get the outcome_id
             p_outcome_id = cursor.fetchone()[0]
-            conn.commit()
+            
         except Exception as e:
             print(f"Error inserting pitch data: {e}")
             conn.rollback()
@@ -699,12 +707,16 @@ def process_pitch_by_pitch_pre_statcast(pitches, game_id, inning_half):
 
 
         #Update for the next pitch so we can track where we are#
-        last_at_bat = at_bat_num
+        last_at_bat = at_bat
         pitch_num += 1
+        if cursor:
+            cursor.close()
+        if conn:
+            conn_pool.putconn(conn)
+
     
 
-    cursor.close()
-    conn_pool.putconn(conn)
+    
 
 # Process the pitch by pitch data for statcast years
 def process_pitch_by_pitch_statcast(pitches, game_id, inning_half):
@@ -739,19 +751,21 @@ def process_pitch_by_pitch_statcast(pitches, game_id, inning_half):
                 #Insert ab_outcome_label
                 cursor.execute("""
                     INSERT INTO ab_outcomes (ab_outcome_label)
-                    VALUES (%s) ON CONFLICT (ab_outcome_label) DO NOTHING
+                    VALUES (%s) ON CONFLICT (ab_outcome_label) DO UPDATE
+                    SET ab_outcome_label = EXCLUDED.ab_outcome_label
                     RETURNING ab_outcome_id
                 """, (ab_outcome_label,))
 
+                conn.commit()
                 #Get at bat outcome id
                 ab_outcome_id = cursor.fetchone()[0]
-                conn.commit()
+                
 
                 #Get the description of the at bat result
                 at_bat_des = pitch.get('des')
                 cursor.execute("""
                     INSERT INTO at_bats (game_id, inning_num, inning_half, at_bat_num, batter_id, pitcher_id, ab_outcome_id, at_bat_des)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (game_id, inning, inning_half, at_bat_num) DO NOTHING
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (game_id, inning_num, inning_half, at_bat_num) DO NOTHING
                 """, (game_id, inning_num, inning_half, at_bat_num, batter_id, pitcher_id, ab_outcome_id, at_bat_des))
                 conn.commit()
 
@@ -769,7 +783,8 @@ def process_pitch_by_pitch_statcast(pitches, game_id, inning_half):
             #Insert pitch data
             cursor.execute("""
                 INSERT INTO pitch_outcomes (p_call, p_call_name, p_description, p_result_code)
-                VALUES (%s, %s, %s, %s) ON CONFLICT (p_call, p_call_name, p_description, p_result_code) DO NOTHING
+                VALUES (%s, %s, %s, %s) ON CONFLICT (p_call, p_call_name, p_description, p_result_code) DO UPDATE 
+                SET p_call = EXCLUDED.p_call, p_call_name = EXCLUDED.p_call_name, p_description = EXCLUDED.p_description, p_result_code = EXCLUDED.p_result_code
                 RETURNING p_outcome_id
             """, (p_call, p_call_name, p_description, p_result_code))
 
@@ -792,7 +807,8 @@ def process_pitch_by_pitch_statcast(pitches, game_id, inning_half):
         try:
             cursor.execute("""
                 INSERT INTO pitch_types (pitch_type_code, pitch_type_name)
-                VALUES (%s, %s) ON CONFLICT (pitch_type_code, pitch_type_name) DO NOTHING
+                VALUES (%s, %s) ON CONFLICT (pitch_type_code, pitch_type_name) DO UPDATE
+                SET pitch_type_code = EXCLUDED.pitch_type_code, pitch_type_name = EXCLUDED.pitch_type_name
                 RETURNING pitch_type_id
             """, (pitch_type_code, pitch_type_name))
             pitch_type_id = cursor.fetchone()[0]
@@ -1005,7 +1021,7 @@ def pull_json(batch_size=500, out_queue=None):
     out_queue.put(None)  # Sentinel value to indicate that no more batches are coming
 
 
-def process_batches(out_queue, max_workers=95):
+def process_batches(out_queue, max_workers=48):
     while out_queue.empty():
         print("Waiting for data...")
         time.sleep(5)
@@ -1022,11 +1038,11 @@ def process_batches(out_queue, max_workers=95):
     print("All done!")
 
 def main():
-    out_queue = queue.Queue()  # Create a queue to pass batches between threads
+    out_queue = queue.Queue(maxsize=10)  # Create a queue to pass batches between threads
 
     load_data() # Load the data from the database (player_ids, venue_ids, team_seasons etc)
     # Create the thread for pulling data (fetching in batches)
-    batching_thread = threading.Thread(target=pull_json, args=(500, out_queue))
+    batching_thread = threading.Thread(target=pull_json, args=(250, out_queue))
     batching_thread.start()
 
     # Start the batch processing in the main thread or with a separate pool of threads

@@ -34,7 +34,7 @@ def try_failed_game_ids():
                     game_response = requests.get(game_url)
                     if game_response.status_code == 200:
                         game_data = game_response.json()
-                        if game_data.get("game_status") == "F":
+                        if game_data.get("game_status") == "F" or game_data.get("game_status") == "FR":
                             game_json = json.dumps(game_data)
                             print(date)
                             cursor.execute("""
@@ -114,7 +114,7 @@ def get_game_jsons(league, dates):
 
                     if game_response.status_code == 200:
                         game_data = game_response.json()
-                        if game_data.get("game_status") == "F":
+                        if game_data.get("game_status") == "F" or game_data.get("game_status") == "FR":
                             game_json = json.dumps(game_data)
                             print(date)
                             cursor.execute("""
@@ -180,7 +180,7 @@ def get_all_game_ids(start_year = 1903, end_year = 2025, start_month=1, end_mont
 #             future.result()  # This raises exceptions if any thread fails
 
 
-get_all_game_ids(start_year=1903, end_year=1915)
+get_all_game_ids(start_year=1950, end_year=1960)
 
 do_failed()
 
