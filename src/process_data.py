@@ -5,9 +5,10 @@ import concurrent.futures
 import passwords
 import threading
 import datetime
+import time
 import requests
 import queue
-from endpoints import MLB_API_BASE
+from endpoints import MLB_API_BASE, MLB_API_VERSION
 
 PLAY_BY_PLAY_YEAR = 1950
 MLB_STATCAST_YEAR = 2015
@@ -77,6 +78,7 @@ def parse_team_data(team_data, year):
                         OR teams.team_abr IS DISTINCT FROM EXCLUDED.team_abr
                         OR teams.team_location IS DISTINCT FROM EXCLUDED.team_location
         """, (team_id, team_name, club_name, team_abr, team_location, first_year))
+        conn.commit()
         ########################################
 
         ##########Level of Play#################
@@ -92,6 +94,7 @@ def parse_team_data(team_data, year):
             """, (division_id, division_name))
         else:  
             division_id = None
+        conn.commit()
         ########################################
 
         ##########Venue#########################
@@ -103,6 +106,7 @@ def parse_team_data(team_data, year):
             """, (venue_id, venue_name))
         else:
             venue_id = None
+        conn.commit()
         ########################################
 
         ##########League########################
@@ -114,6 +118,7 @@ def parse_team_data(team_data, year):
             """, (league_id, league_name))
         else:
             league_id = None
+        conn.commit()
         ########################################
 
         ########Spring League###################
@@ -125,6 +130,7 @@ def parse_team_data(team_data, year):
             """, (spring_league_id, spring_league_name))
         else:
             spring_league_id = None
+        conn.commit()
         ########################################
 
         ########Spring Venue####################
@@ -136,6 +142,7 @@ def parse_team_data(team_data, year):
             """, (spring_venue_id, spring_venue_name))
         else:
             spring_venue_id = None
+        conn.commit()
         ########################################
 
         #######Insert team data into team_seasons table#####
@@ -181,13 +188,15 @@ def post_games(h_team_id, a_team_id, venue_id, level_id, type_id, date, game_id,
 
 # Returns the wind and weatherif they exist otherwise returns none for the categories that dont exist
 def parse_info_array(info_array):
-    wind, weather = None
-    for info in info_array:
-        info_label = info.get('label')
-        if info_label == 'Weather':
-            weather = info.get('value')
-        elif info_label == 'Wind':
-            wind = info.get('value')
+    wind = None
+    weather = None
+    if info_array:
+        for info in info_array:
+            info_label = info.get('label')
+            if info_label == 'Weather':
+                weather = info.get('value')
+            elif info_label == 'Wind':
+                wind = info.get('value')
     return wind, weather
 
 # Parses the team stats and inserts them into the team_games table
@@ -241,9 +250,19 @@ def parse_team_stats(stats, team_id, game_id):
 def parse_position(position_data):
     position_id = position_data.get('code')
     position_name = position_data.get('name')
-    conn = conn_pool.getconn()
-    cursor = conn.cursor()
+    if position_id == 'O':
+        position_id = 12
+    elif not position_id:
+        position_id = -1
+        position_name = 'Unknown'
+    else:
+        position_id = int(position_id)
+        position_name = position_data.get('name')
+    conn = None
+    cursor = None
     try:
+        conn = conn_pool.getconn()
+        cursor = conn.cursor()
         cursor.execute("""
             INSERT INTO positions (position_id, position_name)
             VALUES (%s, %s) ON CONFLICT (position_id) DO NOTHING
@@ -251,17 +270,43 @@ def parse_position(position_data):
         conn.commit()
     except Exception as e:
         print(f"Error inserting position data: {e}")
-        conn.rollback()
+        if conn:
+            conn.rollback()
     finally:
-        cursor.close()
-        conn_pool.putconn(conn)
+        if cursor:
+            cursor.close()
+        if conn:
+            conn_pool.putconn(conn)
     return position_id
 
 
 # Puts a player into the players table
-def post_player(player_data):
+def post_player(player_data, game_id):
     link = player_data.get('link')
     player_id = player_data.get('id')
+    conn = None
+    cursor = None
+
+    if player_id == 0:
+        player_name = 'Unknown'
+        try:
+            conn = conn_pool.getconn()
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO players (player_id, player_name)
+                VALUES (%s, %s) ON CONFLICT (player_id) DO NOTHING
+            """, (player_id, player_name))
+            conn.commit()
+        except Exception as e:
+            print(f"Error inserting player data: {e}")
+            if conn:
+                conn.rollback()
+        finally:
+            if cursor:
+                cursor.close()
+            if conn:
+                conn_pool.putconn(conn)
+        return player_id
     player_name = player_data.get('fullName')
     try: 
         # Call the api and get the players information
@@ -308,15 +353,15 @@ def post_pitching_stats(player_id, game_id, team_id, pitching_stats):
     wild_pitches = pitching_stats.get('wildPitches')
     balks = pitching_stats.get('balks')
     pickoffs = pitching_stats.get('pickoffs')
-    complete_game = pitching_stats.get('completeGame')
-    shutout = pitching_stats.get('shutout')
-    save_opportunity = pitching_stats.get('saveOpportunities')
+    complete_game = bool(pitching_stats.get('completeGame')) 
+    shutout = bool(pitching_stats.get('shutout')) 
+    save_opportunity = bool(pitching_stats.get('saveOpportunities')) 
     inherited_runners = pitching_stats.get('inheritedRunners')
     inherited_runners_scored = pitching_stats.get('inheritedRunnersScored')
     pitches_thrown = pitching_stats.get('pitchesThrown')
-    strikes_throw = pitching_stats.get('strikes')
+    strikes_thrown = pitching_stats.get('strikes')
     balls_thrown = pitching_stats.get('balls')
-    save = pitching_stats.get('save')
+    save = bool(pitching_stats.get('save')) 
     doubles_allowed = pitching_stats.get('doubles')
     triples_allowed = pitching_stats.get('triples')
     air_outs = pitching_stats.get('airOuts')
@@ -324,17 +369,17 @@ def post_pitching_stats(player_id, game_id, team_id, pitching_stats):
     fly_outs = pitching_stats.get('flyOuts')
     pop_outs = pitching_stats.get('popOuts')
     ground_outs = pitching_stats.get('groundOuts') 
-    win = pitching_stats.get('win')
-    loss = pitching_stats.get('loss')
-    hold = pitching_stats.get('hold')
-    game_started = pitching_stats.get('gamesStarted')
+    win = bool(pitching_stats.get('win')) 
+    loss = bool(pitching_stats.get('loss'))
+    hold = bool(pitching_stats.get('hold')) 
+    game_started = bool(pitching_stats.get('gamesStarted')) 
     conn = conn_pool.getconn()
     cursor = conn.cursor()
     try:
         cursor.execute("""
-            INSERT INTO player_games_pitching (game_id, team_id, player_id, innings_pitched, batters_faced, earned_runs, runs_allowed, hits_allowed, strikeouts, walks, home_runs_allowed, hit_by_pitch, wild_pitches, balks, pickoffs, complete_game, shutout, save_opportunity, inherited_runners, inherited_runners_scored, pitches_thrown, strikes_throw, balls_thrown, save, doubles_allowed, triples_allowed, air_outs, line_outs, fly_outs, pop_outs, ground_outs, win, loss, hold, game_started)
+            INSERT INTO player_games_pitching (game_id, team_id, player_id, innings_pitched, batters_faced, earned_runs, runs_allowed, hits_allowed, strikeouts, walks, home_runs_allowed, hit_by_pitch, wild_pitches, balks, pickoffs, complete_game, shutout, save_opportunity, inherited_runners, inherited_runners_scored, pitches_thrown, strikes_thrown, balls_thrown, save, doubles_allowed, triples_allowed, air_outs, line_outs, fly_outs, pop_outs, ground_outs, win, loss, hold, game_started)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (game_id, team_id, player_id) DO NOTHING
-        """, (game_id, team_id, player_id, innings_pitched, batters_faced, earned_runs, runs_allowed, hits_allowed, strikeouts, walks, home_runs_allowed, hit_by_pitch, wild_pitches, balks, pickoffs, complete_game, shutout, save_opportunity, inherited_runners, inherited_runners_scored, pitches_thrown, strikes_throw, balls_thrown, save, doubles_allowed, triples_allowed, air_outs, line_outs, fly_outs, pop_outs, ground_outs, win, loss, hold, game_started))
+        """, (game_id, team_id, player_id, innings_pitched, batters_faced, earned_runs, runs_allowed, hits_allowed, strikeouts, walks, home_runs_allowed, hit_by_pitch, wild_pitches, balks, pickoffs, complete_game, shutout, save_opportunity, inherited_runners, inherited_runners_scored, pitches_thrown, strikes_thrown, balls_thrown, save, doubles_allowed, triples_allowed, air_outs, line_outs, fly_outs, pop_outs, ground_outs, win, loss, hold, game_started))
         conn.commit()
     except Exception as e:
         print(f"Error inserting pitching stats: {e}")
@@ -431,14 +476,25 @@ def post_roster_games(game_id, team_id, player_id):
         cursor.close()
         conn_pool.putconn(conn)
 
+def get_position_id(player_id):
+    response = requests.get(f"{MLB_API_BASE}/{MLB_API_VERSION}/people/{player_id}")
+    response.raise_for_status()
+    json_data = response.json().get('people', [{}])[0]
+    position_data = json_data.get('primaryPosition', {})
+    return parse_position(position_data)
+
+
 # Parses the players stats and inserts them into roster_games, player_games_(hitting, pitching, fielding) tables (if they recorded stats in those categories)
 def parse_players(players, team_id, game_id):
     #iterate through players to get each players stats for the game
-    for player in players:
-        player_id = post_player(player.get('person', {}))
+    for x in players:
+        player = players.get(x, {})
+        player_id = post_player(player.get('person', {}), game_id)
         post_roster_games(game_id, team_id, player_id)
         player_stats = player.get('stats', {})
         player_position_id = parse_position(player.get('position', {}))
+        if not player_position_id:
+            player_position_id = get_position_id(player_id)
         hitting_stats = player_stats.get('batting', {})
         pitching_stats = player_stats.get('pitching', {})
         fielding_stats = player_stats.get('fielding', {})
@@ -452,11 +508,13 @@ def parse_players(players, team_id, game_id):
 
 # Processes the innings data
 def process_innings(innings, game_id):
-    conn = conn_pool.getconn()
-    cursor = conn.cursor()
+    conn = None
+    cursor = None
     for inning in innings:
         try:
-            inning_number = inning.get('num')
+            conn = conn_pool.getconn()
+            cursor = conn.cursor()
+            inning_num = inning.get('num')
             inning_home = inning.get('home', {})
             inning_away = inning.get('away', {})
 
@@ -467,9 +525,9 @@ def process_innings(innings, game_id):
             home_lob = inning_home.get('leftOnBase')
             home_half = 'B'
             cursor.execute("""
-                INSERT INTO innings (game_id, inning_number, inning_half, hits, runs, errors, lob)
-                VALUES (%s, %s, %s, %s, %s, %s, %s) ON CONFLICT (game_id, inning_number, inning_half) DO NOTHING
-            """, (game_id, inning_number, home_half, home_hits, home_runs, away_errors, home_lob))
+                INSERT INTO innings (game_id, inning_num, inning_half, hits, runs_scored, errors, left_on_base)
+                VALUES (%s, %s, %s, %s, %s, %s, %s) ON CONFLICT (game_id, inning_num, inning_half) DO NOTHING
+            """, (game_id, inning_num, home_half, home_hits, home_runs, away_errors, home_lob))
             ###################################
             #######Away Team/Top Half##########
             away_hits = inning_away.get('hits')
@@ -478,19 +536,24 @@ def process_innings(innings, game_id):
             away_lob = inning_away.get('leftOnBase')
             away_half = 'T'
             cursor.execute("""
-                INSERT INTO innings (game_id, inning_number, inning_half, hits, runs, errors, lob)
-                VALUES (%s, %s, %s, %s, %s, %s, %s) ON CONFLICT (game_id, inning_number, team_id) DO NOTHING
-            """, (game_id, inning_number, away_half, away_hits, away_runs, home_errors, away_lob))
+                INSERT INTO innings (game_id, inning_num, inning_half, hits, runs_scored, errors, left_on_base)
+                VALUES (%s, %s, %s, %s, %s, %s, %s) ON CONFLICT (game_id, inning_num, inning_half) DO NOTHING
+            """, (game_id, inning_num, away_half, away_hits, away_runs, home_errors, away_lob))
             ###################################
             conn.commit()
 
         except Exception as e:
             print(f"Error inserting inning data: {e}")
-            conn.rollback()
+            if conn:
+                conn.rollback()
+        finally:
+            if cursor:
+                cursor.close()
+            if conn:
+                conn_pool.putconn(conn)
 
 
-    cursor.close()
-    conn_pool.putconn(conn)
+    
 
 
 # Process the pitch by pitch data
@@ -781,24 +844,23 @@ def process_pitch_by_pitch_statcast(pitches, game_id, inning_half):
 
 def parse_game_data(data):
     try:
-        game_info = data[0]# Get the game data
+        game_json = data[0]# Get the game data
         game_type = data[1]# Get the game type
         game_type_id = GAME_TYPE_IDS.get(game_type)# Get the game type id
         game_level = data[2]# Get the league
         game_level_id = LEVEL_IDS.get(game_level)# Get the level id
-        game_json = json.loads(game_info)# Load the JSON data into a dictionary
+        #game_json = json.loads(game_info)# Load the JSON data into a dictionary (Turns out it loads in as a dictionary)
         
         ##########get date and time of the gam##########
-        game_date = game_json.get('game_date')
-        game_year = datetime.datetime.strptime(game_date, '%Y-%m-%d').year
+        datetime_format = '%Y-%m-%dT%H:%M:%SZ'
         date_str = game_json.get('scoreboard', {}).get('datetime', {}).get('dateTime')
-        dt = datetime.fromisoformat(date_str.replace("Z", ""))
-        game_time = dt.strftime("%H:%M:%S")
+        game_time = datetime.datetime.strptime(date_str, datetime_format).time()
+        game_date = datetime.datetime.strptime(date_str, datetime_format).date()
+        game_year = game_date.year
         ###############################################
 
         ##############Get game & venue id######################
         game_id = game_json.get('scoreboard', {}).get('gamePk')
-        print(f"Processing game: {game_id}")
         venue_id = game_json.get('venue_id')
         #######################################################
 
@@ -806,6 +868,7 @@ def parse_game_data(data):
         info_array = game_json.get('boxscore', {}).get('info')
         wind, weather = parse_info_array(info_array) #Get the wind and weather
         ###############################################
+        
 
         #get data about the teams
         away_team_data = game_json.get('away_team_data', {})
@@ -815,14 +878,13 @@ def parse_game_data(data):
 
         #insert game data into the games table
         post_games(home_team_id, away_team_id, venue_id, game_level_id, game_type_id, game_date, game_id, game_time, weather, wind, game_year)
-
         
         #Get team stats from the game and put them into the db
         away_stats = game_json.get('boxscore', {}).get('teams', {}).get('away', {}).get('teamStats', {})
         home_stats = game_json.get('boxscore', {}).get('teams', {}).get('home', {}).get('teamStats', {})
+        
         parse_team_stats(away_stats, away_team_id, game_id) #Insert away team stats into the team_games table
         parse_team_stats(home_stats, home_team_id, game_id) #Insert home team stats into the team_games table
-
 
         #Get the players stats and insert them into their tables
         away_roster = game_json.get('boxscore', {}).get('teams', {}).get('away', {}).get('players', {})
@@ -846,17 +908,16 @@ def parse_game_data(data):
             else:
                 process_pitch_by_pitch_pre_statcast(away_pitches, game_id, 'B')
                 process_pitch_by_pitch_pre_statcast(home_pitches, game_id, 'T')
-  
-    
-    except json.JSONDecodeError:
-        raise ValueError("Invalid JSON data provided")
+
     except Exception as e:
+        print(f"Error parsing game data: {e}")
         raise Exception(f"Error parsing game data: {str(e)}")
     else:
+        conn = conn_pool.getconn()
+        cursor = conn.cursor()
         try:
             game_id_str = str(game_id).zfill(6)
-            conn = conn_pool.getconn()
-            cursor = conn.cursor()
+            
             cursor.execute("""
                 DELETE FROM game_info WHERE game_id = %s
             """, (game_id_str,))
@@ -886,6 +947,8 @@ def pull_json(batch_size=500, out_queue=None):
         if not batch:
             break  # Break when no more rows are available
         out_queue.put(batch)  # Put the batch in the queue
+    # batch = cursor.fetchmany(batch_size)
+    # out_queue.put(batch)  # Put the batch in the queue
 
     cursor.close()
     conn.close()
@@ -894,8 +957,10 @@ def pull_json(batch_size=500, out_queue=None):
 
 def process_batches(out_queue, max_workers=95):
     while out_queue.empty():
-        pass
-    
+        print("Waiting for data...")
+        time.sleep(5)
+
+    print("Got the data!")
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
         while True:
             batch = out_queue.get()  # Get a batch from the queue
@@ -903,7 +968,8 @@ def process_batches(out_queue, max_workers=95):
                 break
             # Process the batch concurrently
             futures = [executor.submit(parse_game_data, game) for game in batch]
-            concurrent.futures.wait(futures)  # Wait for all futures to complete
+            concurrent.futures.wait(futures) # Wait for all futures to finish
+    print("All done!")
 
 def main():
     out_queue = queue.Queue()  # Create a queue to pass batches between threads

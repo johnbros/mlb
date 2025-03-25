@@ -180,7 +180,7 @@ def get_all_game_ids(start_year = 1903, end_year = 2025, start_month=1, end_mont
 #             future.result()  # This raises exceptions if any thread fails
 
 
-get_all_game_ids(start_year=2023, end_year=2025)
+get_all_game_ids(start_year=1903, end_year=1915)
 
 do_failed()
 
