@@ -299,6 +299,39 @@
     - ***pitch_data_id***: References pitch_data(pitch_data_id)
   - **Constraints**: inning_half must be either 'T' or 'B'
 
+### Table: Pitch_Data
+
+- **Description**: Statcast information for pitches
+- **Columns**:
+  - **initial_speed**: Numeric - Speed of pitch at release
+  - **final_speed**: Numeric - Speed of pitch at arrival
+  - **x0**: Numeric - X Location of pitch (Distance towards first base)
+  - **y0**: Numeric - Y location of pitch (Distance away from home plate)
+  - **z0**: Numeric - Z location of pitch (Height)
+  - **vx0**: Numeric - Initial X velocity of the pitch
+  - **vy0**: Numeric - Initial Y velocity of the pitch
+  - **vz0**: Numeric - Initial Z velocity of the pitch
+  - **ax**: Numeric - Initial X acceleration of the pitch
+  - **ay**: Numeric - Initial Y acceleration of the pitch
+  - **az**: Numeric - Initial Z acceleration of the pitch
+  - **px**: Numeric - Horizontal position of the pitch when it crosses homeplate
+  - **pz**: Numeric - Vertical position of the pitch when it crosses homeplate
+  - **spin_rate**: Numeric - RPM of the pitch
+  - **sz_top**: Numeric - Top of the strike zone(From the ground)
+  - **sz_bot**: Numeric - Bottom of the strike zone(From the ground)
+  - **pfxx**: Numeric - Horizontal movement of the pitch (no gravity)
+  - **pfxz**: Numeric - Vertical movement of the pitch (no gravity)
+  - **pfxzwithgravity**: Numeric - Vertical movement of the pitch
+  - **pfxxwithgravity**: Numeric - Horizontal movement of the pitch
+  - **extension**: Numeric - Extension of the pitcher on release
+  - **breakz**: Numeric - Vertical movement of the pitch(inches)
+  - **breakx**: Numeric - Horizontal Movement of the pitch(inches)
+- **Keys and Indexes**
+  - **Primary Key**
+    - ***pitch_data_id***: Unique identifier for the pitch data
+  - **Foreign Keys**
+    - ***pitch_type_id***: References pitch_types(pitch_type_id)
+
 ### Table: At_Bats
 
 - **Description**: Information about individual at-bats
@@ -322,6 +355,23 @@
     - ***pitcher_id***: References players(player_id)
   - **Constraints**: inning_half must be either 'T' or 'B'
 
+### Table: Bip_Data
+
+- **Description**: Statcast data for Balls hit in play
+- **Columns**:
+  - **hit_angle**: Numeric - Angle the ball was hit at
+  - **hit_speed**: Numeric - Speed the ball was hit at
+  - **hc_y_ft**: Numeric - Y Coordinate in feet on the field of where the hit landed
+  - **hc_x_fr**: Numeric - X coordinate in feet on the field of where the hit landed
+  - **isBarrel**: Boolean - True/False value if the ball was hit on the barrel
+  - **distance**: Numeric - Distance the hit traveled in feet
+  - **bat_speed**: Numeric - Speed of the bat when it made contact
+- **Keys and Indexes**:
+  - **Primary Key**
+    - ***bip_data_id***: Integer - Unique identifier for this ball in play
+  - **Foreign Key**:
+    - ***pitch_data_id***: References pitch_data(pitch_data_id)
+
 ### Table: Pitch_Type
 
 - **Description**: Lookup table for pitch types
@@ -330,26 +380,6 @@
 - **Keys and Indexes**:
   - **Primary Key**
     - ***pitch_type_id***: Integer, Not null - Unique identifier of the pitch type
-
-### Table: Pitch_Data
-
-- **Description**: Advanced metrics for individual pitches
-- **Columns**:
-  - **pitch_data_id**: Integer, NOT NULL - Unique identifier
-  - **extension**: Numeric - Pitcher's extension measurement
-  - **[Additional pitch data fields not shown in schema excerpt]**
-- **Keys and Indexes**:
-  - **Primary Key**: pitch_data_id
-
-### Table: Bip_Data
-
-- **Description**: Ball-in-play data
-- **Columns**:
-  - **bip_data_id**: Integer, Not null - Unique identifier
-  - **bat_speed**: Numeric - Bat speed measurement
-  - **[Additional BIP data fields not shown in schema excerpt]**
-- **Keys and Indexes**:
-  - **Primary Key**: bip_data_id
 
 ### Table: Pitch_Outcomes
 
