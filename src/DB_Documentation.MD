@@ -29,7 +29,7 @@
     -***(a_team_id, season_year)***: references team_seasons(team_id, season_year)
     -***venue_id***: references venues(venue_id)
     -***level_id***: references levels(level_id)
-    -***type_id***: references types(type_id)
+    -***type_id***: references game_types(type_id)
 
 ### Table: Teams
 
@@ -319,10 +319,8 @@
   - **spin_rate**: Numeric - RPM of the pitch
   - **sz_top**: Numeric - Top of the strike zone(From the ground)
   - **sz_bot**: Numeric - Bottom of the strike zone(From the ground)
-  - **pfxx**: Numeric - Horizontal movement of the pitch (no gravity)
-  - **pfxz**: Numeric - Vertical movement of the pitch (no gravity)
-  - **pfxzwithgravity**: Numeric - Vertical movement of the pitch
-  - **pfxxwithgravity**: Numeric - Horizontal movement of the pitch
+  - **pfxx**: Numeric - Horizontal movement of the pitch compared to a pitch affected only by gravity and drag(Inches)
+  - **pfxz**: Numeric - Vertical movement of the pitch compared to a pitch affected only by gravity and drag(Inches))
   - **extension**: Numeric - Extension of the pitcher on release
   - **breakz**: Numeric - Vertical movement of the pitch(inches)
   - **breakx**: Numeric - Horizontal Movement of the pitch(inches)
