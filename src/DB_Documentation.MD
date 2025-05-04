@@ -21,6 +21,7 @@
   - **game_time**: Time, Not null - Time the game was played
   - **weather**: Text - Description of the weather
   - **wind**: Text - Speed and Direction of the wind
+  - **fieldcond**: Integer - FieldCond: 0 Unknown, 1 Soaked, 2 Wet, 3 Damp, 4 Dry
 - **Keys and Indexes**:
   - **Primary Key**
     - ***game_id***: Identifier of each individual game, reused mlbs gamePK
@@ -260,6 +261,13 @@
   - **Primary Key**
     - ***venue_id***: Integer - Unique identifier for the Venue
 
+### Table: Umpires
+
+- **Description**: Umpire information
+  - **Columns**
+    - **umpire_id**: Text - Unique Identifier of the Umpire
+    - **umpire**: Text - Name of the umpire
+
 ### Table: Innings
 
 - **Description**: Data about individual innings in games
@@ -435,6 +443,117 @@
 - **Keys and Indexes**:
   - **Primary Key**
     - ***type_id***: Integer, Not null - Unique identifier for the type
+
+### Table: Base States
+
+- **Description**: Id of who is on each base
+  - **Columns**
+    - **first**: Integer - Id of player on first(null if none)
+    - **second**: Integer - Id of player on second(null if none)
+    - **third**: Integer - Id of player on third(null if none)
+- **Keys and Indexes**:
+  - **Primary Keys**
+    - ***(game_id, inning_num, inning_half, at_bat_num, pitch_num)***: References pitches(" ")
+  - **foreign keys**
+    - ***first/second/third***: References players(player_id)
+
+### Table: Defense States
+
+- **Description**: Id of who is playing each position
+  - **pos_1**: Integer - Id of the Pitcher
+  - **pos_2**: Integer - Id of the Catcher
+  - **pos_3**: Integer - Id of the First Baseman
+  - **pos_4**: Integer - Id of the Second Baseman
+  - **pos_5**: Integer - Id of the Third Baseman
+  - **pos_6**: Integer - Id of the Short Stop
+  - **pos_7**: Integer - Id of the Left Fielder
+  - **pos_8**: Integer - Id of the Center Fielder
+  - **pos_9**: Integer - Id of the Right Fielder
+- **Keys and Indexes**:
+  - **Primary Keys**
+    - ***(game_id, inning_num, inning_half, at_bat_num, pitch_num)***: References pitches(" ")
+  - **foreign keys**
+    - ***pos_num***: References players(player_id)
+
+### Table: Batting Lineup
+
+- **Description**: Id of who is hitting in each spot in the order
+  - **Columns**
+    - **first**: Integer - Id of the first batter
+    - **second**: Integer - Id of the second batter
+    - **third**: Integer - Id of the third batter
+    - **fourth**: Integer - Id of the fourth batter
+    - **fifth**: Integer - Id of the fifth batter
+    - **sixth**: Integer - Id of the sixth batter
+    - **seventh**: Integer - Id of the seventh batter
+    - **eighth**: Integer - Id of the eighth batter
+    - **ninth**: Integer - Id of the ninth batter
+- **Keys and Indexes**:
+  - **Primary Keys**
+    - ***(game_id, inning_num, inning_half, at_bat_num, pitch_num)***: References pitches(" ")
+  - **foreign keys**
+    - **Nth**: References players(player_id)
+  
+### Table: Base Running Events
+
+- **Description**: How the runners advanced during the play
+  - **Columns**
+    - **player**: Integer - Id of the player who was running
+    - **from_base**: Integer - What base the runner started at
+    - **to_base**: Integer - What base the runner ended at
+    - **was_out**: Boolean - Were they out on this play
+    - **scored**: Boolean - Did they score on this play
+    - **stealing**: Boolean - Was stealing occurring during this event
+- **Keys and Indexes**:
+  - **Primary Keys**
+    - ***(game_id, inning_num, inning_half, at_bat_num, pitch_num)***: References pitches(" ")
+  - **foreign keys**
+    - ***Player***: References players(player_id)
+
+### Table: Fielding Sequences
+
+- **Description**: Throws made during a play
+- **Columns**
+  - **out_at**: Integer - If an out occurred from this throw the origin of the out player is put here(batter out = 0)
+  - **error_on**: Integer - If there was an error player who committed it
+  - **fielder_id**: Integer - Player who had the ball
+  - **target_id**: Integer - Player who the ball was thrown too
+  - **next_fielding_sequence_id**: Integer - Id of the next throw made if any
+- **Keys and Indexes**:
+  - **Primary Keys**
+    - ***fielding_sequence_id***: Integer - Id of the this section of the sequence
+  - **foreign keys**
+    - ***(game_id, inning_num, inning_half, at_bat_num, pitches)***: References pitches(" ")
+    - ***runner_id***: References players(player_id)
+    - ***next_fielding_sequence_id***: References fielding_sequences(fielding_sequence_id)
+
+### Table: Substitutions
+
+- **Description**: Information on player substitutions
+  - **Columns**
+    - **sub_in**: Integer - Player id of who subbed in
+    - **sub_out**: Integer - Player id of who they replaced
+    - **Lineup_spot**: Integer - spot where the player is batting(0 if not batting) this will always be the same as the player they replace
+    - **Position**: Integer - Position the player will be playing
+- **Keys and Indexes**:
+  - **Primary Keys**
+    - ***game_id***: Integer, Not null - Identifier of the game
+    - ***inning_num***: Integer, Not null - Inning number the at bat was in
+    - ***inning_half***: Char(1) - 'T' for top or 'B' for bottom
+    - ***at_bat_num***: Integer, Not null - At bat in the inning
+    - ***pitch_num***: Integer, Not null - Number of the pitch during the at bat (1,2,3, etc)
+  - **foreign keys**
+    - ***(game_id, inning_num, inning_half, at_bat_num, pitch_num)***: References Pitches(" ")
+    - ***sub_in***: References players(player_id)
+    - ***sub_out***: References players(player_id)
+
+### Table: Game Com
+
+- **Description**: Communications in retrosheet to describe plays
+
+### Table: Player Adjustments
+
+- **Description**: Hand adjustments for pitching and batting.
 
 ## Views
 

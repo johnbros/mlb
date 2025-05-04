@@ -11,10 +11,10 @@ import queue
 from endpoints import MLB_API_BASE, MLB_API_VERSION
 
 PLAY_BY_PLAY_YEAR = 1950
-MLB_STATCAST_YEAR = 2008
+MLB_STATCAST_YEAR = 2015
 TRIPLE_A_STATCAST_YEAR = 2023
 FIRST_MINOR_LEAGUE_YEAR = 2005
-GAME_TYPE_IDS = {'Spring Training': 1, 'Regular Season': 2, 'Wild Card Game': 3, 'Championship': 4, 'Division Series': 5, 'League Championship Series': 6, 'World Series': 7, 'Wild Card': 3}
+GAME_TYPE_IDS = {'Spring Training': 1, 'Regular Season': 2, 'Wild Card Game': 3, 'Championship': 4, 'Division Series': 5, 'League Championship Series': 6, 'World Series': 7}
 LEVEL_IDS = {'MLB': 1, 'AAA': 11, 'AA': 12, 'A+': 13, 'A': 14}
 
 conn_pool = pool.SimpleConnectionPool(5, 95, dbname="mlb_data", user="postgres", password=f"{passwords.password}", host="127.0.0.1", port="5432")
@@ -214,15 +214,15 @@ def parse_team_data(team_data, year):
     return team_id
 
 # Inserts game information into the games table
-def post_games(h_team_id, a_team_id, venue_id, level_id, type_id, date, game_id, game_time, weather, wind, season_year, game_date_time):
+def post_games(h_team_id, a_team_id, venue_id, level_id, type_id, date, game_id, game_time, weather, wind, season_year):
     conn = conn_pool.getconn()
     cursor = conn.cursor()
     try:
         #Im not expecting on conflict to occur but in case it does i'll just have it do nothing
         cursor.execute("""
-            INSERT INTO games (game_id, date, game_time, venue_id, level_id, type_id, h_team_id, a_team_id, weather, wind, season_year, datetime)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (game_id) DO NOTHING
-        """, (game_id, date, game_time, venue_id, level_id, type_id, h_team_id, a_team_id, weather, wind, season_year, game_date_time))
+            INSERT INTO games (game_id, date, game_time, venue_id, level_id, type_id, h_team_id, a_team_id, weather, wind, season_year)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (game_id) DO NOTHING
+        """, (game_id, date, game_time, venue_id, level_id, type_id, h_team_id, a_team_id, weather, wind, season_year))
         conn.commit()
     except Exception as e:
         print(f"Error inserting game data: {e}")
@@ -569,191 +569,8 @@ def get_position_id(player_id):
     return parse_position(position_data)
 
 
-# Parses the players stats and inserts them into roster_games, player_games_(hitting, pitching, fielding) tables (if they recorded stats in those categories)
-def parse_players(players, team_id, game_id):
-    #iterate through players to get each players stats for the game
-    for x in players:
-        player = players.get(x, {})
-        player_id = post_player(player.get('person', {}), game_id)
-        post_roster_games(game_id, team_id, player_id)
-        player_stats = player.get('stats', {})
-        player_position_id = parse_position(player.get('position', {}))
-        if not player_position_id:
-            player_position_id = get_position_id(player_id)
-        hitting_stats = player_stats.get('batting', {})
-        pitching_stats = player_stats.get('pitching', {})
-        fielding_stats = player_stats.get('fielding', {})
-        if not player_id:
-            player_id = 0
-
-        if hitting_stats:
-            post_hitting_stats(player_id, game_id, team_id, player_position_id, hitting_stats)
-        if pitching_stats:
-            post_pitching_stats(player_id, game_id, team_id, pitching_stats)
-        if fielding_stats:
-            post_fielding_stats(player_id, game_id, team_id, player_position_id, fielding_stats)
-
-# Processes the innings data
-def process_innings(innings, game_id):
-    conn = None
-    cursor = None
-    for inning in innings:
-        try:
-            conn = conn_pool.getconn()
-            cursor = conn.cursor()
-            inning_num = inning.get('num')
-            inning_home = inning.get('home', {})
-            inning_away = inning.get('away', {})
-
-            #######Home Team/Bottom Half#######
-            home_hits = inning_home.get('hits')
-            home_runs = inning_home.get('runs')
-            away_errors = inning_away.get('errors')
-            home_lob = inning_home.get('leftOnBase')
-            home_half = 'B'
-            cursor.execute("""
-                INSERT INTO innings (game_id, inning_num, inning_half, hits, runs_scored, errors, left_on_base)
-                VALUES (%s, %s, %s, %s, %s, %s, %s) ON CONFLICT (game_id, inning_num, inning_half) DO NOTHING
-            """, (game_id, inning_num, home_half, home_hits, home_runs, away_errors, home_lob))
-            ###################################
-            #######Away Team/Top Half##########
-            away_hits = inning_away.get('hits')
-            away_runs = inning_away.get('runs')
-            home_errors = inning_home.get('errors')
-            away_lob = inning_away.get('leftOnBase')
-            away_half = 'T'
-            cursor.execute("""
-                INSERT INTO innings (game_id, inning_num, inning_half, hits, runs_scored, errors, left_on_base)
-                VALUES (%s, %s, %s, %s, %s, %s, %s) ON CONFLICT (game_id, inning_num, inning_half) DO NOTHING
-            """, (game_id, inning_num, away_half, away_hits, away_runs, home_errors, away_lob))
-            ###################################
-            conn.commit()
-
-        except Exception as e:
-            print(f"Error inserting inning data: {e}")
-            if conn:
-                conn.rollback()
-        finally:
-            if cursor:
-                cursor.close()
-            if conn:
-                conn_pool.putconn(conn)
 
 
-    
-
-
-# Process the pitch by pitch data
-def process_pitch_by_pitch_pre_statcast(pitches, game_id, inning_half):
-    inning_num = 1
-    last_at_bat = 0
-    at_bat_num = 0
-    pitch_num = 1
-    conn = None
-    cursor = None
-    #Iterate through the pitches
-    for pitch in pitches:
-        #Check if we are in a new inning or at bat
-        conn = conn_pool.getconn()
-        new_inning = False
-        cursor = conn.cursor()
-        inning = pitch.get('inning')
-        at_bat = pitch.get('ab_number')
-        if inning != inning_num:
-            inning_num = inning
-            at_bat_num = 1        
-        #check if we are in a new at bat if so add it into the at bats table
-        if at_bat != last_at_bat:
-            at_bat_num += 1
-            pitch_num = 1
-
-            #Get the batter and the pitcher
-            batter_id = pitch.get('batter')
-            pitcher_id = pitch.get('pitcher')
-            
-            #Get at bat outcome result
-            ab_outcome_label = pitch.get('result')
-            ab_outcome_id = None
-            if not ab_outcome_label:
-                ab_outcome_label = 'Unknown'
-
-            try:
-                #Insert ab_outcome_label
-                cursor.execute("""
-                    INSERT INTO ab_outcomes (ab_outcome_label)
-                    VALUES (%s) ON CONFLICT (ab_outcome_label) DO UPDATE
-                    SET ab_outcome_label = EXCLUDED.ab_outcome_label
-                    RETURNING ab_outcome_id
-                """, (ab_outcome_label,))
-
-                
-                #Get at bat outcome id
-                ab_outcome_id = cursor.fetchone()[0]
-                conn.commit()
-
-                #Get the description of the at bat result
-                at_bat_des = pitch.get('des')
-
-                cursor.execute("""
-                    INSERT INTO at_bats (game_id, inning_num, inning_half, at_bat_num, batter_id, pitcher_id, ab_outcome_id, at_bat_des)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (game_id, inning_num, inning_half, at_bat_num) DO NOTHING
-                """, (game_id, inning_num, inning_half, at_bat_num, batter_id, pitcher_id, ab_outcome_id, at_bat_des))
-                conn.commit()
-
-            except Exception as e:
-                print(f"Error inserting at bat data: {e}")
-                conn.rollback()
-
-        #Get information about the pitch outcome
-        p_call = pitch.get('call')
-        p_call_name = pitch.get('call_name')
-        p_description = pitch.get('description')
-        p_result_code = pitch.get('result_code')
-        p_outcome_id = None
-        try: 
-            #Insert pitch data
-            cursor.execute("""
-                INSERT INTO pitch_outcomes (p_call, p_call_name, p_description, p_result_code)
-                VALUES (%s, %s, %s, %s) ON CONFLICT (p_call, p_call_name, p_description, p_result_code) DO UPDATE 
-                SET p_call = EXCLUDED.p_call, p_call_name = EXCLUDED.p_call_name, p_description = EXCLUDED.p_description, p_result_code = EXCLUDED.p_result_code
-                RETURNING p_outcome_id
-            """, (p_call, p_call_name, p_description, p_result_code))
-
-            conn.commit()
-            #Get the outcome_id
-            p_outcome_id = cursor.fetchone()[0]
-            
-        except Exception as e:
-            print(f"Error inserting pitch data: {e}")
-            conn.rollback()
-
-
-        balls = pitch.get('balls')
-        strikes = pitch.get('strikes')
-        outs = pitch.get('outs')
-
-        #Insert pitch into the pitches table
-        try:
-            cursor.execute("""
-                INSERT INTO pitches (game_id, inning_num, inning_half, at_bat_num, pitch_num, pitch_outcome_id, balls, strikes, outs)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (game_id, inning_num, inning_half, at_bat_num, pitch_num) DO NOTHING
-            """, (game_id, inning_num, inning_half, at_bat_num, pitch_num, p_outcome_id, balls, strikes, outs))
-            conn.commit()
-        except Exception as e:
-            print(f"Error inserting pitch data: {e}")
-            conn.rollback()
-
-
-
-        #Update for the next pitch so we can track where we are#
-        last_at_bat = at_bat
-        pitch_num += 1
-        if cursor:
-            cursor.close()
-        if conn:
-            conn_pool.putconn(conn)
-
-    
 
     
 
@@ -773,184 +590,30 @@ def process_pitch_by_pitch_statcast(pitches, game_id, inning_half):
         inning = pitch.get('inning')
         if inning != inning_num:
             inning_num = inning
-            at_bat_num = 0
+            at_bat_num = 1
         
         #check if we are in a new at bat if so add it into the at bats table
         at_bat = pitch.get('ab_number')
         if at_bat != last_at_bat:
             at_bat_num += 1
             pitch_num = 1
-
-            #Get the batter and the pitcher
-            batter_id = pitch.get('batter')
-            pitcher_id = pitch.get('pitcher')
-            
-            #Get at bat outcome result
-            ab_outcome_label = pitch.get('result')
-            ab_outcome_id = None
-            if not ab_outcome_label:
-                ab_outcome_label = 'Unknown'
-            try:
-                cursor.execute("""
-                    INSERT INTO ab_outcomes (ab_outcome_label)
-                    VALUES (%s) ON CONFLICT (ab_outcome_label) DO UPDATE
-                    SET ab_outcome_label = EXCLUDED.ab_outcome_label
-                    RETURNING ab_outcome_id
-                """, (ab_outcome_label,))
-
-                conn.commit()
-                #Get at bat outcome id
-                ab_outcome_id = cursor.fetchone()[0]
-                
-
-                #Get the description of the at bat result
-                at_bat_des = pitch.get('des')
-                cursor.execute("""
-                    INSERT INTO at_bats (game_id, inning_num, inning_half, at_bat_num, batter_id, pitcher_id, ab_outcome_id, at_bat_des)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (game_id, inning_num, inning_half, at_bat_num) DO NOTHING
-                """, (game_id, inning_num, inning_half, at_bat_num, batter_id, pitcher_id, ab_outcome_id, at_bat_des))
-                conn.commit()
-
-            except Exception as e:
-                print(f"Error inserting at bat data: {e}")
-                if conn:
-                    conn.rollback()
-
-
-        #Get information about the pitch outcome
-        p_call = pitch.get('call')
-        p_call_name = pitch.get('call_name')
-        p_description = pitch.get('description')
-        p_result_code = pitch.get('result_code')
-        p_outcome_id = None
-        try: 
-            cursor.execute("""
-                INSERT INTO pitch_outcomes (p_call, p_call_name, p_description, p_result_code)
-                VALUES (%s, %s, %s, %s) ON CONFLICT (p_call, p_call_name, p_description, p_result_code) DO UPDATE 
-                SET p_call = EXCLUDED.p_call, p_call_name = EXCLUDED.p_call_name, p_description = EXCLUDED.p_description, p_result_code = EXCLUDED.p_result_code
-                RETURNING p_outcome_id
-            """, (p_call, p_call_name, p_description, p_result_code))
-
-            #Get the outcome_id
-            p_outcome_id = cursor.fetchone()[0]
-            conn.commit()
-        except Exception as e:
-            print(f"Error inserting pitch data: {e}")
-            if conn:
-                conn.rollback()
-        # Balls, Strikes, and Outs
-        balls = pitch.get('balls')
-        strikes = pitch.get('strikes')
-        outs = pitch.get('outs')
-
-        #Get pitch type data
-        pitch_type_code = pitch.get('pitch_type')
-        pitch_type_name = pitch.get('pitch_name')
+       
         
-        pitch_type_id = None
-        try:
-            if not pitch_type_code:
-                pitch_type_code = 'Unknown'
-            if not pitch_type_name:
-                pitch_type_name = 'Unknown'
-            
-            #Insert pitch type data
-            cursor.execute("""
-                INSERT INTO pitch_type (pitch_type_code, pitch_type_name)
-                VALUES (%s, %s) ON CONFLICT (pitch_type_code, pitch_type_name) DO UPDATE
-                SET pitch_type_code = EXCLUDED.pitch_type_code, pitch_type_name = EXCLUDED.pitch_type_name
-                RETURNING pitch_type_id
-            """, (pitch_type_code, pitch_type_name))
-            pitch_type_id = cursor.fetchone()[0]
-            conn.commit()
-        except Exception as e:
-            print(f"Error inserting pitch type data: {e}")
-            if conn:
-                conn.rollback()
-        #Get the pitch statcast data
-        initial_speed = safe_float(pitch.get('start_speed'))
-        final_speed = safe_float(pitch.get('end_speed'))
-        x0 = safe_float(pitch.get('x0'))
-        y0 = safe_float(pitch.get('y0'))
-        z0 = safe_float(pitch.get('z0'))
-        vx0 = safe_float(pitch.get('vx0'))
-        vy0 = safe_float(pitch.get('vy0'))
-        vz0 = safe_float(pitch.get('vz0'))
-        ax = safe_float(pitch.get('ax'))
-        ay = safe_float(pitch.get('ay'))
-        az = safe_float(pitch.get('az'))
-        px = safe_float(pitch.get('px'))
-        pz = safe_float(pitch.get('pz'))
-        spin_rate = safe_float(pitch.get('spin_rate'))
-        sz_top = safe_float(pitch.get('sz_top'))
-        sz_bot = safe_float(pitch.get('sz_bot'))
-        pfxx = safe_float(pitch.get('pfxX'))
-        pfxz = safe_float(pitch.get('pfxZ'))
-        pfxZWithGravity = safe_float(pitch.get('pfxZWithGravity'))
-        pfxXWithGravity = safe_float(pitch.get('pfxXWithGravity'))
-        extension = safe_float(pitch.get('extension'))
-        breakX = safe_float(pitch.get('breakX'))
-        breakZ = safe_float(pitch.get('breakZ'))
+        # Get Play_id
         play_id = pitch.get('play_id')
-
-        #Insert pitch statcast into pitch_data table
-        pitch_data_id = None
-        try:
-            #Insert pitch data
-            cursor.execute("""
-                INSERT INTO pitch_data (pitch_type_id, initial_speed, final_speed, x0, y0, z0, vx0, vy0, vz0, ax, ay, az, px, pz, spin_rate, sz_top, sz_bot, pfxx, pfxz, pfxZWithGravity, pfxXWithGravity, extension, breakx, breakz)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                RETURNING pitch_data_id
-            """, (pitch_type_id, initial_speed, final_speed, x0, y0, z0, vx0, vy0, vz0, ax, ay, az, px, pz, spin_rate, sz_top, sz_bot, pfxx, pfxz, pfxZWithGravity, pfxXWithGravity, extension, breakX, breakZ))
-            pitch_data_id = cursor.fetchone()[0]
-            conn.commit()
-        except Exception as e:
-            print(f"Error inserting pitch statcast data: {e}")
-            if conn:
-                conn.rollback()
         
         try:
             cursor.execute("""
-                INSERT INTO pitches (game_id, inning_num, inning_half, at_bat_num, pitch_num, pitch_outcome_id, balls, strikes, outs, pitch_data_id, play_id)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (game_id, inning_num, inning_half, at_bat_num, pitch_num) DO NOTHING
-            """, (game_id, inning_num, inning_half, at_bat_num, pitch_num, p_outcome_id, balls, strikes, outs, pitch_data_id, play_id))
+                UPDATE pitches 
+                SET play_id = %s
+                WHERE game_id = %s AND inning_num = %s AND inning_half = %s AND at_bat_num = %s AND pitch_num = %s
+            """, (play_id, game_id, inning_num, inning_half, at_bat_num, pitch_num))
             conn.commit()
         except Exception as e:
             print(f"Error inserting pitch data: {e}")
             if conn:
                 conn.rollback()
-        #Most consistent statcast hit stat
-        hit_speed = safe_float(pitch.get('hit_speed'))
 
-        #If the ball was hit into play
-        if hit_speed:
-            #Get the statcast data 
-            hit_angle = safe_float(pitch.get('hit_angle'))
-            isbarrel = bool(pitch.get('is_barrel') or 0)
-            bat_speed = safe_float(pitch.get('batSpeed'))
-            distance = safe_float(pitch.get('hit_distance'))
-            hc_y_ft = safe_float(pitch.get('hc_y_ft'))
-            hc_x_ft = safe_float(pitch.get('hc_x_ft'))
-            
-            #Insert hit data into bip_data table
-            bip_data_id = None
-            try:
-                cursor.execute("""
-                    INSERT INTO bip_data ( hit_speed, hit_angle, isbarrel, bat_speed, distance, hc_y_ft, hc_x_ft)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING bip_data_id
-                """, (hit_speed, hit_angle, isbarrel, bat_speed, distance, hc_y_ft, hc_x_ft))
-                bip_data_id = cursor.fetchone()[0]
-                conn.commit()
-
-                cursor.execute("""
-                    UPDATE at_bats SET bip_data_id = %s WHERE game_id = %s AND inning_num = %s AND inning_half = %s AND at_bat_num = %s
-                """, (bip_data_id, game_id, inning_num, inning_half, at_bat_num))
-                conn.commit()
-
-            except Exception as e:
-                print(f"Error inserting bip data: {e}")
-                if conn:
-                    conn.rollback()
         #Update for the next pitch so we can track where we are#
         last_at_bat = at_bat
         pitch_num += 1
@@ -963,96 +626,20 @@ def process_pitch_by_pitch_statcast(pitches, game_id, inning_half):
 def parse_game_data(data):
     try:
         game_json = data[0]# Get the game data
-        game_type = data[1]# Get the game type
-        game_type_id = GAME_TYPE_IDS.get(game_type)# Get the game type id
         game_level = data[2]# Get the league
         game_level_id = LEVEL_IDS.get(game_level)# Get the level id
         #game_json = json.loads(game_info)# Load the JSON data into a dictionary (Turns out it loads in as a dictionary)
         
+        ##########get date and time of the gam##########
+        datetime_format = '%Y-%m-%dT%H:%M:%SZ'
+        date_str = game_json.get('scoreboard', {}).get('datetime', {}).get('dateTime')
+        game_date = datetime.datetime.strptime(date_str, datetime_format).date()
+        game_year = game_date.year
+        ###############################################
+
         ##############Get game & venue id######################
         game_id = game_json.get('scoreboard', {}).get('gamePk')
-        venue_id = game_json.get('venue_id')
-        #######################################################
-        game_date_time = None
-        game_date = None
-        game_time = None
-        game_year = None
         
-        try:
-            game_id_str = str(game_id).zfill(6)
-            request = requests.get(f"https://statsapi.mlb.com/api/v1.1/game/{game_id_str}/feed/live/diffPatch")
-            request.raise_for_status()
-            data = request.json()
-            if data:
-                # Parse the time string
-                time_str = data['liveData']['plays']['allPlays'][0]['about']['startTime']
-                
-                # Parse the ISO format string - already in UTC
-                dt = datetime.fromisoformat(time_str.replace('Z', '+00:00'))
-                
-                # Format for database string fields
-                game_date = dt.strftime("%Y-%m-%d")
-                game_time = dt.strftime("%H:%M:%S")
-                game_year = dt.year
-                
-                # Create a naive datetime for the timestamp field
-                game_date_time = dt.replace(tzinfo=None)
-            else:
-                ##########get date and time of the gam##########
-                datetime_format = '%Y-%m-%dT%H:%M:%SZ'
-                date_str = game_json.get('scoreboard', {}).get('datetime', {}).get('dateTime')
-                game_time = datetime.datetime.strptime(date_str, datetime_format).time()
-                game_date = datetime.datetime.strptime(date_str, datetime_format).date()
-                game_year = game_date.year
-                game_date_time = datetime.datetime.combine(game_date, game_time)
-                ###############################################
-
-        except Exception as e:
-            ##########get date and time of the gam##########
-            datetime_format = '%Y-%m-%dT%H:%M:%SZ'
-            date_str = game_json.get('scoreboard', {}).get('datetime', {}).get('dateTime')
-            game_time = datetime.datetime.strptime(date_str, datetime_format).time()
-            game_date = datetime.datetime.strptime(date_str, datetime_format).date()
-            game_year = game_date.year
-            game_date_time = datetime.datetime.combine(game_date, game_time)
-            ###############################################
-
-        
-
-        ##############Info Array#######################
-        info_array = game_json.get('boxscore', {}).get('info')
-        wind, weather = parse_info_array(info_array) #Get the wind and weather
-        ###############################################
-        
-
-        #get data about the teams
-        away_team_data = game_json.get('away_team_data', {})
-        if not away_team_data:
-            away_team_data = game_json.get('scoreboard', {}).get('teams', {}).get('away', {})
-        away_team_id = parse_team_data(away_team_data, game_year)#Inserts away team data into the teams table and returns the id
-        home_team_data = game_json.get('home_team_data', {})
-        if not home_team_data:
-            home_team_data = game_json.get('scoreboard', {}).get('teams', {}).get('home', {})
-        home_team_id = parse_team_data(home_team_data, game_year)#Inserts home team data into the teams table and returns the id
-
-        #insert game data into the games table
-        post_games(home_team_id, away_team_id, venue_id, game_level_id, game_type_id, game_date, game_id, game_time, weather, wind, game_year, game_date_time)
-        
-        #Get team stats from the game and put them into the db
-        away_stats = game_json.get('boxscore', {}).get('teams', {}).get('away', {}).get('teamStats', {})
-        home_stats = game_json.get('boxscore', {}).get('teams', {}).get('home', {}).get('teamStats', {})
-        
-        parse_team_stats(away_stats, away_team_id, game_id) #Insert away team stats into the team_games table
-        parse_team_stats(home_stats, home_team_id, game_id) #Insert home team stats into the team_games table
-
-        #Get the players stats and insert them into their tables
-        away_roster = game_json.get('boxscore', {}).get('teams', {}).get('away', {}).get('players', {})
-        parse_players(away_roster, away_team_id, game_id)
-        home_roster = game_json.get('boxscore', {}).get('teams', {}).get('home', {}).get('players', {})
-        parse_players(home_roster, home_team_id, game_id)
-
-        game_innings = game_json.get('scoreboard', {}).get('linescore', {}).get('innings', [])
-        process_innings(game_innings, game_id)
 
         if game_year >= PLAY_BY_PLAY_YEAR:
             #get pitch by pitch
@@ -1064,9 +651,6 @@ def parse_game_data(data):
             if (game_year >= MLB_STATCAST_YEAR and game_level_id == 1) or (game_year >= TRIPLE_A_STATCAST_YEAR and game_level_id == 11):
                 process_pitch_by_pitch_statcast(away_pitches, game_id, 'B')
                 process_pitch_by_pitch_statcast(home_pitches, game_id, 'T')
-            else:
-                process_pitch_by_pitch_pre_statcast(away_pitches, game_id, 'B')
-                process_pitch_by_pitch_pre_statcast(home_pitches, game_id, 'T')
 
     except Exception as e:
         print(f"Error parsing game data: {e}")

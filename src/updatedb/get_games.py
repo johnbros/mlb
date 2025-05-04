@@ -74,18 +74,19 @@ def get_game_jsons(league, dates):
             game_id = str(game.get('gamePk')).zfill(6)
             date = dates.get('date')
 
-            if game_type in ["Regular Season", "Spring Training", "Wild Card Game", 
+            if game_type in ["Regular Season", "Spring Training", "Wild Card Game", "Wild Card",
                              "Division Series", "League Championship Series", "World Series", "Championship"]:
                 cursor.execute("SELECT COUNT(*) FROM games WHERE game_id = %s", (gamePk,))
                 result = cursor.fetchone()
-
+                
                 if result[0] == 0:
                     game_url = f"https://baseballsavant.mlb.com/gf?game_pk={game_id}"
                     game_response = requests.get(game_url)
 
                     if game_response.status_code == 200:
                         game_data = game_response.json()
-                        if game_data.get("game_status") == "F" or game_data.get("game_status") == "FR":
+                        status = game_data.get("game_status")
+                        if status in {'F', 'FR', 'FG', 'FO'}:
                             game_json = json.dumps(game_data)
                             print(date)
                             cursor.execute("""
@@ -127,10 +128,9 @@ def get_all_game_ids(start_year = 1903, end_year = 2025, start_month=1, end_mont
        'A+': range(max(2005, start_year), end_year + 1),
        'A': range(max(2005, start_year), end_year + 1),
     }
-    leagues = {
-        'MLB': range(start_year, end_year + 1),
-        'AAA': range(max(2023, start_year), end_year + 1)
-    }
+    # leagues = {
+    #     'MLB': range(start_year, end_year + 1),
+    # }
 
     # 10 Threads for different years
     with concurrent.futures.ThreadPoolExecutor(max_workers=5) as year_executor:
@@ -155,7 +155,7 @@ def get_all_game_ids(start_year = 1903, end_year = 2025, start_month=1, end_mont
 #             future.result()  # This raises exceptions if any thread fails
 
 
-get_all_game_ids(start_year=2005, end_year=2025)
+get_all_game_ids(start_year=2015, end_year=2025)
 
 do_failed()
 
