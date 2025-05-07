@@ -456,6 +456,21 @@ def process_single_game(game_lines, g_id=None):
         #         print(sql)
         #         cur.execute(sql, row)
         tracker = parse_game(game_lines, game_id)
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT h_final_score, a_final_score FROM games WHERE game_id = %s
+                """, (game_id,))
+                row = cur.fetchone()
+                h_score, a_score = row
+                home_score = tracker.get_home_score()
+                away_score = tracker.get_away_score()
+                if h_score != home_score or a_score != away_score:
+                    print(f"Score mismatch for game {game_id}: simulated {home_score}-{away_score} vs actual {h_score}-{a_score}", file=sys.stderr)
+                    print(f'Home team: {info["hometeam"]}, Away team: {info["visteam"]}', file=sys.stderr)
+                    print(f'Game date: {info["date"]}, Start Time: {info["starttime"]}', file=sys.stderr)
+        except Exception as e:
+            print(f"Error fetching scores for game {game_id}: {e}", file=sys.stderr)
 
         base_states = tracker.get_base_states()
         base_running_events = tracker.get_base_running_events()
@@ -577,56 +592,9 @@ with ThreadPoolExecutor(max_workers=5) as executor:
             season_year = file[0:4]
             team_abr = file[4:7].upper()
             if 'eve' in filepath:
-                conn = conn_pool.getconn()
-                try:
-                    with conn.cursor() as cur:
-                        cur.execute("""
-                                    SELECT game_id from games g
-                                    join team_abbreviation_map hmap on g.venue_team_id = hmap.team_id where 
-                                    level_id = 1 and
-                                    type_id = 2 and
-                                    hmap.external_abbr = %s and
-                                    g.season_year = %s
-                                    ORDER BY g.datetime
-                                    """, (team_abr, season_year))
-                        rows = cur.fetchall()
-                    if rows:
-                        game_ids = [row[0] for row in rows]
-                
-
-                
-                        idx = 0
-                        if len(games) > len(game_ids):
-                            with conn.cursor() as cur:
-                                cur.execute("""
-                                            SELECT game_id from games g
-                                            join team_abbreviation_map hmap on g.h_team_id = hmap.team_id where 
-                                            level_id = 1 and
-                                            type_id = 2 and
-                                            hmap.external_abbr = %s and
-                                            g.season_year = %s
-                                            ORDER BY g.datetime
-                                            """, (team_abr, season_year))
-                                rows = cur.fetchall()
-                            if rows:
-                                game_ids = [row[0] for row in rows]
-                            if len(games) > len(game_ids):
-                                game_ids = None
-                        elif len(games) < len(game_ids):
-                            print(f'Less games than game_ids for {filepath}')
-                finally:
-                    conn_pool.putconn(conn)
-                if game_ids: 
-                    for game in games:
-                        futures.append(executor.submit(process_single_game, game, game_ids[idx]))
-                        idx += 1
-                else:
-                    for game in games:
-                        futures.append(executor.submit(process_single_game, game))
-            else:
                 for game in games:
                     futures.append(executor.submit(process_single_game, game))
-           
+            
 
     for future in as_completed(futures):
         try:
@@ -634,6 +602,3 @@ with ThreadPoolExecutor(max_workers=5) as executor:
         except Exception as e:
             print(f"Thread failed: {e}", file=sys.stderr)
 
-
-
-    

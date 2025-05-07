@@ -65,6 +65,8 @@ TEAM_TIMEZONES = {
     'ARL02': 'America/Chicago',
     'TOR02': 'America/Toronto',
     'WAS11': 'America/New_York',
+    'TOK01': 'Asia/Tokyo',
+    'SYD01': 'Australia/Sydney',
 
 }
 

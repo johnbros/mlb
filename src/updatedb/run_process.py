@@ -35,8 +35,8 @@ def main():
         
         try:
             # Run the process_data.py script
-            subprocess.run(['../../venv/scripts/python', 'process_data.py'], check=True)
-            #subprocess.run(['../../venv/scripts/python', 'get_play_ids.py'], check=True)
+            # subprocess.run(['../../venv/scripts/python', 'process_data.py'], check=True)
+            subprocess.run(['../../venv/scripts/python', 'get_play_ids.py'], check=True)
         except subprocess.CalledProcessError as e:
             print(f"Error running process_data.py: {e}")
         

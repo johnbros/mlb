@@ -74,9 +74,9 @@ def get_game_jsons(league, dates):
             game_id = str(game.get('gamePk')).zfill(6)
             date = dates.get('date')
 
-            if game_type in ["Regular Season", "Spring Training", "Wild Card Game", "Wild Card",
+            if game_type in ["Regular Season", "Wild Card Game", "Wild Card",
                              "Division Series", "League Championship Series", "World Series", "Championship"]:
-                cursor.execute("SELECT COUNT(*) FROM games WHERE game_id = %s", (gamePk,))
+                cursor.execute("SELECT COUNT(*) FROM game_info WHERE game_id = %s", (game_id,))
                 result = cursor.fetchone()
                 
                 if result[0] == 0:
@@ -121,16 +121,16 @@ def get_game_ids(start_date, end_date, league, sport_id):
 
 def get_all_game_ids(start_year = 1903, end_year = 2025, start_month=1, end_month=12):
     
-    leagues = {
-       'MLB': range(start_year, end_year + 1),
-       'AAA': range(max(2005, start_year), end_year + 1),
-       'AA': range(max(2005, start_year), end_year + 1),
-       'A+': range(max(2005, start_year), end_year + 1),
-       'A': range(max(2005, start_year), end_year + 1),
-    }
     # leagues = {
-    #     'MLB': range(start_year, end_year + 1),
+    #    'MLB': range(start_year, end_year + 1),
+    #    'AAA': range(max(2005, start_year), end_year + 1),
+    #    'AA': range(max(2005, start_year), end_year + 1),
+    #    'A+': range(max(2005, start_year), end_year + 1),
+    #    'A': range(max(2005, start_year), end_year + 1),
     # }
+    leagues = {
+        'MLB': range(start_year, end_year + 1),
+    }
 
     # 10 Threads for different years
     with concurrent.futures.ThreadPoolExecutor(max_workers=5) as year_executor:

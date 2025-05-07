@@ -1042,8 +1042,7 @@ class GameStateTracker:
         except Exception as e:
             print(f"Error processing play: {play_details}, basic_play: {basic_play}, advancements: {advancements} Error: {e}")
             raise e
-        
-        # If there is 3 outs reset the base states
+
 
 
             
