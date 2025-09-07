@@ -45,8 +45,10 @@ def get_pitch_times(game_id):
                 isPitch = event.get('isPitch')
                 if isPitch:
                     pitch_time = event.get('startTime')
-                    pitch_time = round_to_nearest_quarter_utc(pitch_time)
                     play_id = event.get('playId')
+                    print(f"[DEBUG] Original pitch time: {pitch_time}, Play ID: {play_id}, Game ID: {game_id}")
+                    pitch_time = round_to_nearest_quarter_utc(pitch_time)
+                    
                     conn = conn_pool.getconn()
                     try:
                         with conn.cursor() as cur:
@@ -89,7 +91,7 @@ def get_game_ids():
     conn = conn_pool.getconn()  # Get a connection from the pool
     cursor = conn.cursor()
     try:
-        cursor.execute("SELECT game_id FROM games WHERE season_year > 2014 AND type_id != 1 AND level_id = 1")
+        cursor.execute("SELECT distinct g.game_id FROM games g JOIN pitches p ON g.game_id = p.game_id WHERE season_year > 2014 AND type_id != 1 AND level_id = 1 AND p.pitch_time IS NULL")
         game_ids = cursor.fetchall()
         return [game[0] for game in game_ids]
     except Exception as e:

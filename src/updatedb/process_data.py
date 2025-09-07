@@ -912,7 +912,8 @@ def process_pitch_by_pitch_statcast(pitches, game_id, inning_half):
         try:
             cursor.execute("""
                 INSERT INTO pitches (game_id, inning_num, inning_half, at_bat_num, pitch_num, pitch_outcome_id, balls, strikes, outs, pitch_data_id, play_id)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (game_id, inning_num, inning_half, at_bat_num, pitch_num) DO NOTHING
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (game_id, inning_num, inning_half, at_bat_num, pitch_num) DO UPDATE
+                           SET pitch_data_id = EXCLUDED.pitch_data_id
             """, (game_id, inning_num, inning_half, at_bat_num, pitch_num, p_outcome_id, balls, strikes, outs, pitch_data_id, play_id))
             conn.commit()
         except Exception as e:

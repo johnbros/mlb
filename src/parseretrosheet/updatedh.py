@@ -201,7 +201,8 @@ VENUE_TZ_MAP = {
     "TD Ameritrade Park": "America/Chicago",
 
 }
-
+dates = ['2019-05-19', '2019-06-29', '2019-06-30', '2020-08-09', '2021-07-21', '2023-04-30', '2023-06-24', '2023-06-25', '2024-03-20', '2024-03-21', '2024-06-08', '2024-06-09']
+date_objs = [datetime.strptime(d, "%Y-%m-%d").date() for d in dates]
 
 date_pattern = re.compile(r'^[A-Za-z]+ \d{1,2}, \d{4}$')
 
@@ -218,13 +219,15 @@ def get_single():
                         WHERE g.season_year BETWEEN 2019 AND 2024
                         AND g.level_id = 1 
                         AND g.type_id != 1  
+                        AND g.date = ANY(%s)
+                        AND g.game_id = 565067
                         AND (
                             SELECT COUNT(*)
                             FROM games g2
                             WHERE g2.venue_id = g.venue_id
                             AND g2.date = g.date
                             AND g2.level_id = 1
-                        ) = 1""")
+                        ) = 1""", (date_objs,))
         results = cur.fetchall()
         if results:
             for result in results:

@@ -29,9 +29,11 @@ def dummy_pitches(game_id):
             cur.execute("""
                 INSERT INTO pitches (
                     game_id, inning_num, inning_half, at_bat_num, pitch_num, dummy
-                ) VALUES (%s, %s, %s, %s, %s, TRUE)
+                ) VALUES (%s, %s, %s, %s, %s, True)
                 ON CONFLICT DO NOTHING
             """, (game_id, inning_num, inning_half, at_bat_num, pitch_num))
+        conn.commit()
+    conn_pool.putconn(conn)  # Return the connection to the pool
 
 
 

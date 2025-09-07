@@ -336,6 +336,8 @@ def parse_game(lines, game_id):
             state.handle_padj(tokens)
         elif line.startswith("badj"):
             state.handle_badj(tokens)
+        elif line.startswith("com"):
+            state.handle_com(tokens)
 
     return state 
 
@@ -429,7 +431,8 @@ def process_single_game(game_lines, g_id=None):
                 if g_id is not None:
                     game_id = g_id
                 else:
-                    print(f"Game ID not found for {info['hometeam']} vs {info['visteam']} on {info['date']}", file=sys.stderr)
+                    
+                    print(f"Game ID not found for {info['hometeam']} vs {info['visteam']} on {info['date']}. Calculated UTC: {utc_datetime}", file=sys.stderr)
                     return
         # if game_id == 22669:
         #     tracker = parse_game(game_lines, game_id)
@@ -591,9 +594,9 @@ with ThreadPoolExecutor(max_workers=5) as executor:
 
             season_year = file[0:4]
             team_abr = file[4:7].upper()
-            if 'eve' in filepath:
-                for game in games:
-                    futures.append(executor.submit(process_single_game, game))
+            # if 'post' in filepath:
+            for game in games:
+                futures.append(executor.submit(process_single_game, game))
             
 
     for future in as_completed(futures):

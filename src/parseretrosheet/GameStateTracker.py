@@ -169,7 +169,7 @@ class GameStateTracker:
         self.adjustments.append(adjustment_entry)
 
     def get_pitch_num(self, pitch_sequence):
-        non_pitch_events = {'N', '+', '.', '*', '1', '2', '3', '>', 'V', 'H', 'A'}
+        non_pitch_events = {'N', '+', '.', '*', '1', '2', '3', '>', 'V', 'A'}
         return sum(1 for char in pitch_sequence if char not in non_pitch_events)
 
     def split_play(self, play_details):

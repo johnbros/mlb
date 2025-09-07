@@ -39,6 +39,7 @@ TEAM_TIMEZONES = {
     'CHI12': 'America/Chicago',
     'BOS07': 'America/New_York',
     'ATL02': 'America/New_York',
+    'ATL03': 'America/New_York',
     'BAL12': 'America/New_York',
     'CHI11': 'America/Chicago',
     'WAS10': 'America/New_York',
@@ -67,6 +68,9 @@ TEAM_TIMEZONES = {
     'WAS11': 'America/New_York',
     'TOK01': 'Asia/Tokyo',
     'SYD01': 'Australia/Sydney',
+    'LON01': 'Europe/London',
+    'SEO01': 'Asia/Seoul',
+    'MEX02': 'America/Mexico_City',
 
 }
 
